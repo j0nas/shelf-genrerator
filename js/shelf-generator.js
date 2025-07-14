@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { createDividerService } from '../dist/js/divider-state-machine.js';
 
 export class ShelfGenerator {
     constructor() {
@@ -19,7 +20,7 @@ export class ShelfGenerator {
         this.ghostDivider = null;
         this.hoveredDivider = null;
         
-        // Multi-state interaction system
+        // Multi-state interaction system (LEGACY - being migrated to XState)
         this.interactionState = 'NORMAL'; // NORMAL, HOVERING, SELECTED, DRAGGING
         this.selectedDivider = null;
         this.isDragging = false;
@@ -31,6 +32,44 @@ export class ShelfGenerator {
         this.justDeleted = false; // Flag to prevent same-click processing after delete
         this.justDeselected = false; // Flag to prevent same-click processing after deselect
         this.readyToDrag = false; // Flag to indicate mouse is down on selected divider
+        
+        // NEW: XState service for robust state management
+        this.stateMachine = createDividerService();
+        this.setupStateMachine();
+    }
+    
+    setupStateMachine() {
+        // Configure state machine actions to connect with existing functionality
+        this.stateMachine.machine.config.actions = {
+            addDivider: (context, event) => {
+                console.log('XState Action: addDivider', event.position);
+                // Note: This action fires but the legacy code already handles the actual addition
+                // In future iterations, we'll move the logic here
+            },
+            deleteDivider: (context, event) => {
+                console.log('XState Action: deleteDivider', context.selectedDivider);
+                // Note: This action fires but the legacy code already handles the actual deletion
+                // In future iterations, we'll move the logic here
+            },
+            commitDragPosition: (context, event) => {
+                console.log('XState Action: commitDragPosition', context.selectedDivider);
+                // This will be implemented when we migrate drag logic
+                // For now, the legacy endDrag method handles this
+            }
+        };
+        
+        // Log state transitions for debugging
+        this.stateMachine.onTransition((state, event) => {
+            console.log(`🎯 XState: ${state.value} <- ${event.type}`);
+            if (this.debugMode) {
+                console.log('Context:', state.context);
+            }
+        });
+        
+        // Start the state machine
+        this.stateMachine.start();
+        
+        console.log('✅ XState divider state machine initialized');
     }
     
     init(containerId) {
@@ -178,6 +217,9 @@ export class ShelfGenerator {
             if (distance > 5) {
                 console.log('Mouse moved', distance.toFixed(1), 'pixels - starting drag now');
                 this.readyToDrag = false; // Don't check again
+                
+                // DUAL MODE: Send to XState
+                this.stateMachine.send({ type: 'MOUSE_MOVE_THRESHOLD_EXCEEDED' });
                 this.startDrag(event);
                 return;
             }
@@ -190,16 +232,23 @@ export class ShelfGenerator {
         const existingDivider = this.detectHoveredExistingDivider();
         
         if (existingDivider) {
-            // Check if this is the same as selected divider
+            // DUAL MODE: Update both legacy state and XState during migration
+            
+            // Legacy state management (keep for now)
             if (this.selectedDivider && existingDivider.dividerId === this.selectedDivider.dividerId) {
-                // Hovering over selected divider - maintain selected state
                 this.interactionState = 'SELECTED';
             } else {
-                // Hovering over different divider
                 this.interactionState = 'HOVERING';
                 this.hoveredDivider = existingDivider;
                 this.updateHoverState(existingDivider);
             }
+            
+            // NEW: Send event to XState
+            this.stateMachine.send({ 
+                type: 'HOVER_DIVIDER', 
+                divider: existingDivider 
+            });
+            
             this.hideGhostDivider();
             
             if (this.debugMode) {
@@ -210,6 +259,9 @@ export class ShelfGenerator {
             if (this.interactionState !== 'SELECTED') {
                 this.interactionState = 'NORMAL';
                 this.clearHoverState();
+                
+                // NEW: Send UNHOVER event to XState
+                this.stateMachine.send({ type: 'UNHOVER' });
                 
                 // Check for ghost divider position
                 const result = this.getShelfInteriorIntersection();
@@ -266,6 +318,9 @@ export class ShelfGenerator {
                 const deleteButtonClicked = this.checkDeleteButtonClick();
                 if (deleteButtonClicked) {
                     console.log('Delete button clicked - deleting divider');
+                    
+                    // DUAL MODE: Send to XState and legacy removal
+                    this.stateMachine.send({ type: 'CLICK_DELETE_BUTTON' });
                     app.removeDivider(this.selectedDivider.dividerId);
                     return; // Exit immediately after deletion
                 }
@@ -280,6 +335,9 @@ export class ShelfGenerator {
             
             // Clicking elsewhere - deselect
             console.log('Clicking elsewhere while divider selected - deselecting');
+            
+            // DUAL MODE: Send to XState and legacy deselection
+            this.stateMachine.send({ type: 'CLICK_ELSEWHERE' });
             this.deselectDivider();
             return; // Exit after deselection
         }
@@ -287,6 +345,12 @@ export class ShelfGenerator {
         // SIMPLE LOGIC: If hovering a divider, select it
         if (this.interactionState === 'HOVERING' && this.hoveredDivider) {
             console.log('Selecting hovered divider');
+            
+            // DUAL MODE: Send to XState and legacy selection
+            this.stateMachine.send({ 
+                type: 'CLICK_DIVIDER', 
+                divider: this.hoveredDivider 
+            });
             this.selectDivider(this.hoveredDivider);
             return;
         }
@@ -299,6 +363,12 @@ export class ShelfGenerator {
                 const sectionInfo = this.detectHoveredSection(result.position);
                 if (sectionInfo && sectionInfo.canAdd) {
                     console.log(`Adding divider at position: ${sectionInfo.centerPosition.toFixed(2)}`);
+                    
+                    // DUAL MODE: Send to XState and legacy addition
+                    this.stateMachine.send({ 
+                        type: 'CLICK_EMPTY_SPACE', 
+                        position: sectionInfo.centerPosition 
+                    });
                     app.addDividerAtPosition(sectionInfo.centerPosition);
                 }
             }
@@ -318,6 +388,12 @@ export class ShelfGenerator {
                 x: event.clientX - rect.left,
                 y: event.clientY - rect.top
             };
+            
+            // DUAL MODE: Send to XState
+            this.stateMachine.send({ 
+                type: 'MOUSE_DOWN', 
+                position: this.dragStartPosition 
+            });
         } else {
             console.log('NOT preparing drag - conditions not met');
             this.readyToDrag = false;
@@ -333,6 +409,9 @@ export class ShelfGenerator {
         } else {
             console.log('NOT calling endDrag - state is not DRAGGING');
         }
+        
+        // DUAL MODE: Send to XState
+        this.stateMachine.send({ type: 'MOUSE_UP' });
         
         // Reset the ready to drag flag
         this.readyToDrag = false;
