@@ -14,10 +14,8 @@ class App {
             depth: 12,
             materialThickness: 0.75,
             materialType: 'plywood',
-            shelfSpacing: 12,
             shelfLayout: [], // Array of horizontal dividers
             backPanel: false,
-            adjustableShelves: false,
             edgeTreatment: 'none',
             woodGrain: true,
             units: 'imperial'
@@ -45,7 +43,6 @@ class App {
                 this.currentConfig.height = Math.round(this.inchesToCm(this.currentConfig.height) * 10) / 10;
                 this.currentConfig.depth = Math.round(this.inchesToCm(this.currentConfig.depth) * 10) / 10;
                 this.currentConfig.materialThickness = this.inchesToCm(this.currentConfig.materialThickness);
-                this.currentConfig.shelfSpacing = Math.round(this.inchesToCm(this.currentConfig.shelfSpacing) * 10) / 10;
                 
                 // Convert divider positions to metric
                 this.currentConfig.shelfLayout.forEach(divider => {
@@ -64,7 +61,6 @@ class App {
             document.getElementById('width').max = '305';
             document.getElementById('height').max = '305';
             document.getElementById('depth').max = '61';
-            document.getElementById('shelf-spacing').max = '61';
         }
         
         // Set the thickness dropdown to the correct value after options are updated
@@ -92,8 +88,7 @@ class App {
     setupEventListeners() {
         const inputs = [
             'width', 'height', 'depth', 'material-thickness', 'material-type',
-            'shelf-spacing', 'back-panel', 'adjustable-shelves',
-            'edge-treatment', 'wood-grain'
+            'back-panel', 'edge-treatment', 'wood-grain'
         ];
         
         inputs.forEach(id => {
@@ -121,6 +116,7 @@ class App {
         document.getElementById('view-side').addEventListener('click', () => this.shelfGenerator.setView('side'));
         document.getElementById('view-top').addEventListener('click', () => this.shelfGenerator.setView('top'));
         document.getElementById('view-iso').addEventListener('click', () => this.shelfGenerator.setView('iso'));
+        document.getElementById('debug-toggle').addEventListener('click', () => this.toggleDebugMode());
     }
     
     handleInputChange(id) {
@@ -148,9 +144,7 @@ class App {
             'depth': 'depth',
             'material-thickness': 'materialThickness',
             'material-type': 'materialType',
-            'shelf-spacing': 'shelfSpacing',
             'back-panel': 'backPanel',
-            'adjustable-shelves': 'adjustableShelves',
             'edge-treatment': 'edgeTreatment',
             'wood-grain': 'woodGrain'
         };
@@ -170,7 +164,7 @@ class App {
         if (oldUnit === newUnit) return;
         
         // Convert all dimension values in UI and config
-        const dimensionFields = ['width', 'height', 'depth', 'shelf-spacing'];
+        const dimensionFields = ['width', 'height', 'depth'];
         const thicknessField = 'material-thickness';
         
         dimensionFields.forEach(field => {
@@ -192,9 +186,6 @@ class App {
                 } else if (field === 'depth') {
                     element.min = '10'; // ~4 inches
                     element.max = '61'; // ~24 inches
-                } else if (field === 'shelf-spacing') {
-                    element.min = '15'; // ~6 inches
-                    element.max = '61'; // ~24 inches
                 }
             } else if (newUnit === 'imperial' && oldUnit === 'metric') {
                 // Convert cm to inches
@@ -209,9 +200,6 @@ class App {
                     element.max = '120';
                 } else if (field === 'depth') {
                     element.min = '4';
-                    element.max = '24';
-                } else if (field === 'shelf-spacing') {
-                    element.min = '6';
                     element.max = '24';
                 }
             }
@@ -259,7 +247,6 @@ class App {
         document.getElementById('width-label').textContent = `Width (${unitText}):`;
         document.getElementById('height-label').textContent = `Height (${unitText}):`;
         document.getElementById('depth-label').textContent = `Depth (${unitText}):`;
-        document.getElementById('shelf-spacing-label').textContent = `Shelf Spacing (${unitText}):`;
         document.getElementById('thickness-label').textContent = `Thickness (${unitText}):`;
     }
     
@@ -294,26 +281,33 @@ class App {
         }
     }
     
-    updateShelf() {
-        // Convert config to consistent units for Three.js (always work in inches internally)
-        const threeConfig = { ...this.currentConfig };
-        
+    // Coordinate conversion helpers
+    toInches(value) {
+        return this.currentConfig.units === 'metric' ? this.cmToInches(value) : value;
+    }
+    
+    fromInches(value) {
+        return this.currentConfig.units === 'metric' ? this.inchesToCm(value) : value;
+    }
+    
+    getThreeJSConfig() {
+        // Convert current config to inches for Three.js rendering
+        const config = { ...this.currentConfig };
         if (this.currentConfig.units === 'metric') {
-            // Convert cm back to inches for Three.js rendering
-            threeConfig.width = this.cmToInches(this.currentConfig.width);
-            threeConfig.height = this.cmToInches(this.currentConfig.height);
-            threeConfig.depth = this.cmToInches(this.currentConfig.depth);
-            threeConfig.materialThickness = this.cmToInches(this.currentConfig.materialThickness);
-            threeConfig.shelfSpacing = this.cmToInches(this.currentConfig.shelfSpacing);
-            
-            // Convert divider positions to inches
-            threeConfig.shelfLayout = this.currentConfig.shelfLayout.map(divider => ({
-                ...divider,
-                position: this.cmToInches(divider.position)
+            config.width = this.cmToInches(config.width);
+            config.height = this.cmToInches(config.height);
+            config.depth = this.cmToInches(config.depth);
+            config.materialThickness = this.cmToInches(config.materialThickness);
+            config.shelfLayout = config.shelfLayout.map(d => ({
+                ...d,
+                position: this.cmToInches(d.position)
             }));
         }
-        
-        this.shelfGenerator.updateShelf(threeConfig);
+        return config;
+    }
+    
+    updateShelf() {
+        this.shelfGenerator.updateShelf(this.getThreeJSConfig());
     }
     
     generateCutList() {
@@ -333,10 +327,8 @@ class App {
             depth: 12,
             materialThickness: 0.75,
             materialType: 'plywood',
-            shelfSpacing: 12,
             shelfLayout: [], // Array of horizontal dividers
             backPanel: false,
-            adjustableShelves: false,
             edgeTreatment: 'none',
             woodGrain: true,
             units: 'imperial'
@@ -353,54 +345,59 @@ class App {
         document.getElementById('cutlist-panel').style.display = 'none';
     }
     
-    addHorizontalDivider() {
-        // Calculate default position (middle of available space) in current units
-        let interiorHeight, defaultPosition;
-        
-        if (this.currentConfig.units === 'metric') {
-            // Already in cm
-            interiorHeight = this.currentConfig.height - (2 * this.currentConfig.materialThickness);
-            defaultPosition = interiorHeight / 2;
-        } else {
-            // Already in inches
-            interiorHeight = this.currentConfig.height - (2 * this.currentConfig.materialThickness);
-            defaultPosition = interiorHeight / 2;
-        }
-        
+    // Divider Management API
+    getInteriorHeight() {
+        return this.currentConfig.height - (2 * this.currentConfig.materialThickness);
+    }
+    
+    addDividerAtPosition(position = null) {
+        const defaultPosition = position ?? this.getInteriorHeight() / 2;
         const newDivider = {
             id: Date.now().toString(),
-            position: defaultPosition, // Position from bottom of interior space in current units
-            spaces: {
-                above: { verticalDividers: 0 },
-                below: { verticalDividers: 0 }
-            }
+            position: defaultPosition,
+            spaces: { above: { verticalDividers: 0 }, below: { verticalDividers: 0 } }
         };
         
         this.currentConfig.shelfLayout.push(newDivider);
         this.renderShelfLayoutControls();
         this.updateShelf();
+        return newDivider.id;
     }
     
     removeDivider(dividerId) {
-        this.currentConfig.shelfLayout = this.currentConfig.shelfLayout.filter(
-            divider => divider.id !== dividerId
-        );
+        this.currentConfig.shelfLayout = this.currentConfig.shelfLayout.filter(d => d.id !== dividerId);
         this.renderShelfLayoutControls();
         this.updateShelf();
     }
     
     updateDivider(dividerId, property, value) {
         const divider = this.currentConfig.shelfLayout.find(d => d.id === dividerId);
-        if (divider) {
-            if (property === 'position') {
-                divider.position = parseFloat(value);
-            } else if (property.startsWith('spaces.')) {
-                // Handle nested space properties like 'spaces.above.verticalDividers'
-                const [, spaceType, spaceProperty] = property.split('.');
-                divider.spaces[spaceType][spaceProperty] = parseInt(value);
-            }
-            // Don't re-render controls when just updating values, only update the 3D model
-            this.updateShelf();
+        if (!divider) return;
+        
+        if (property === 'position') {
+            divider.position = parseFloat(value);
+        } else if (property.startsWith('spaces.')) {
+            const [, spaceType, spaceProperty] = property.split('.');
+            divider.spaces[spaceType][spaceProperty] = parseInt(value);
+        }
+        this.updateShelf();
+    }
+    
+    // Legacy method for UI compatibility
+    addHorizontalDivider() {
+        this.addDividerAtPosition();
+    }
+    
+    toggleDebugMode() {
+        const button = document.getElementById('debug-toggle');
+        if (this.shelfGenerator.debugMode) {
+            this.shelfGenerator.disableDebugMode();
+            button.textContent = 'Debug Mode';
+            button.style.backgroundColor = '';
+        } else {
+            this.shelfGenerator.enableDebugMode();
+            button.textContent = 'Debug ON';
+            button.style.backgroundColor = '#ff4757';
         }
     }
     
@@ -570,4 +567,5 @@ let app;
 
 document.addEventListener('DOMContentLoaded', () => {
     app = new App();
+    window.app = app; // Make globally accessible for 3D interactions
 });

@@ -9,6 +9,14 @@ export class ShelfGenerator {
         this.controls = null;
         this.shelfGroup = null;
         this.container = null;
+        
+        // 3D Interaction
+        this.raycaster = new THREE.Raycaster();
+        this.mouse = new THREE.Vector2();
+        this.currentConfig = null;
+        this.debugMode = false;
+        this.debugSphere = null;
+        this.ghostDivider = null;
     }
     
     init(containerId) {
@@ -23,6 +31,7 @@ export class ShelfGenerator {
         this.setupRenderer();
         this.setupControls();
         this.setupLighting();
+        this.setup3DInteraction();
         this.animate();
         
         window.addEventListener('resize', () => this.onWindowResize());
@@ -87,7 +96,126 @@ export class ShelfGenerator {
         this.scene.add(light2);
     }
     
+    setup3DInteraction() {
+        this.renderer.domElement.addEventListener('mousemove', (event) => this.onMouseMove(event));
+        this.renderer.domElement.addEventListener('click', (event) => this.onMouseClick(event));
+    }
+    
+    onMouseMove(event) {
+        if (!this.currentConfig) return;
+        
+        // Calculate mouse position in normalized device coordinates (-1 to +1)
+        const rect = this.renderer.domElement.getBoundingClientRect();
+        this.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+        this.mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+        
+        // Update raycaster
+        this.raycaster.setFromCamera(this.mouse, this.camera);
+        
+        // Check intersection with shelf interior space
+        const result = this.getShelfInteriorIntersection();
+        if (result !== null) {
+            if (this.debugMode) {
+                const unit = result.units === 'metric' ? 'cm' : '"';
+                console.log(`Shelf interior Y position: ${result.position.toFixed(2)}${unit} from bottom`);
+                this.updateDebugVisualization(result.worldPoint);
+            }
+            
+            // Smart section detection and ghost divider
+            const sectionInfo = this.detectHoveredSection(result.position);
+            if (this.debugMode) {
+                console.log('Section info:', sectionInfo);
+            }
+            this.updateGhostDivider(sectionInfo);
+        } else {
+            if (this.debugMode) {
+                this.hideDebugVisualization();
+            }
+            this.hideGhostDivider();
+        }
+    }
+    
+    onMouseClick(event) {
+        if (!this.currentConfig) return;
+        
+        // Check if we have a valid ghost divider position
+        const result = this.getShelfInteriorIntersection();
+        if (result !== null) {
+            const sectionInfo = this.detectHoveredSection(result.position);
+            if (sectionInfo && sectionInfo.canAdd) {
+                // Add divider at the ghost position
+                const app = window.app;
+                if (app) {
+                    if (this.debugMode) {
+                        console.log(`Adding divider at position: ${sectionInfo.centerPosition.toFixed(2)}`);
+                    }
+                    app.addDividerAtPosition(sectionInfo.centerPosition);
+                }
+            }
+        }
+    }
+    
+    getShelfInteriorIntersection() {
+        if (!this.currentConfig) return null;
+        
+        const app = window.app;
+        if (!app) return null;
+        
+        // Create a virtual plane at the front face of the shelf interior for raycasting
+        const thickness = this.currentConfig.materialThickness;
+        const interiorHeight = app.getInteriorHeight();
+        const interiorWidth = this.currentConfig.width - (2 * thickness);
+        
+        // Create a plane geometry covering the interior front face
+        const planeGeometry = new THREE.PlaneGeometry(interiorWidth, interiorHeight);
+        const planeMaterial = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0 });
+        const intersectionPlane = new THREE.Mesh(planeGeometry, planeMaterial);
+        
+        // Position the plane at the front face of the interior space
+        intersectionPlane.position.set(
+            0, // centered horizontally
+            thickness + (interiorHeight / 2), // centered vertically in interior space
+            this.currentConfig.depth / 2 // at the front face
+        );
+        
+        // Raycast against this plane
+        const intersects = this.raycaster.intersectObject(intersectionPlane);
+        
+        // Clean up the temporary plane
+        planeGeometry.dispose();
+        planeMaterial.dispose();
+        
+        if (intersects.length === 0) {
+            return null;
+        }
+        
+        const hit = intersects[0];
+        const worldPoint = hit.point;
+        
+        // Convert world Y position to shelf interior position (0 to interiorHeight)
+        const shelfInteriorY = worldPoint.y - thickness; // Subtract bottom shelf thickness
+        
+        const originalConfig = app.currentConfig;
+        const units = originalConfig.units;
+        
+        // Convert from inches (Three.js units) to current units
+        const position = app.fromInches(shelfInteriorY);
+        
+        if (this.debugMode) {
+            console.log(`Shelf intersection: worldY=${worldPoint.y.toFixed(2)}, interiorY=${shelfInteriorY.toFixed(2)}, position=${position.toFixed(2)}${units}`);
+        }
+        
+        // Only return valid positions within shelf bounds
+        if (shelfInteriorY >= 0 && shelfInteriorY <= app.toInches(interiorHeight)) {
+            return { position, units, worldPoint };
+        }
+        
+        return null;
+    }
+    
     updateShelf(config) {
+        this.currentConfig = config; // Store for 3D interaction
+        
         while(this.shelfGroup.children.length > 0) {
             const child = this.shelfGroup.children[0];
             this.shelfGroup.remove(child);
@@ -311,10 +439,6 @@ export class ShelfGenerator {
         bottomShelf.castShadow = true;
         bottomShelf.receiveShadow = true;
         shelves.push(bottomShelf);
-        
-        if (config.adjustableShelves) {
-            this.addShelfHoles(config);
-        }
         
         return shelves;
     }
@@ -590,26 +714,6 @@ export class ShelfGenerator {
         return colors[Math.abs(hash) % colors.length];
     }
     
-    addShelfHoles(config) {
-        const holeGeometry = new THREE.CylinderGeometry(0.125, 0.125, config.materialThickness + 0.1, 8);
-        const holeMaterial = new THREE.MeshLambertMaterial({ color: 0x333333 });
-        
-        const sides = [-config.width / 2 + config.materialThickness / 2, config.width / 2 - config.materialThickness / 2];
-        
-        sides.forEach(x => {
-            for (let y = config.materialThickness + 2; y < config.height - config.materialThickness - 2; y += 1.25) {
-                const hole = new THREE.Mesh(holeGeometry, holeMaterial);
-                hole.position.set(x, y, config.depth / 4);
-                hole.rotation.x = Math.PI / 2;
-                this.shelfGroup.add(hole);
-                
-                const hole2 = new THREE.Mesh(holeGeometry, holeMaterial);
-                hole2.position.set(x, y, -config.depth / 4);
-                hole2.rotation.x = Math.PI / 2;
-                this.shelfGroup.add(hole2);
-            }
-        });
-    }
     
     centerShelf() {
         const box = new THREE.Box3().setFromObject(this.shelfGroup);
@@ -651,6 +755,165 @@ export class ShelfGenerator {
             height: parseFloat(document.getElementById('height').value) || 72,
             depth: parseFloat(document.getElementById('depth').value) || 12
         };
+    }
+    
+    // For future 3D interaction - convert 3D world position to shelf interior position
+    worldToShelfPosition(worldY, config) {
+        // Simple approach: just return the world Y position directly
+        // We'll handle the coordinate conversion in the section detection
+        return worldY;
+    }
+    
+    // For future 3D interaction - convert shelf position to 3D world position  
+    shelfToWorldPosition(shelfY, config) {
+        const thickness = config.materialThickness;
+        const baseY = thickness;
+        return shelfY + baseY;
+    }
+    
+    // Debug mode methods
+    enableDebugMode() {
+        this.debugMode = true;
+        console.log('3D Debug mode enabled - hover shelf interior to see coordinates');
+    }
+    
+    disableDebugMode() {
+        this.debugMode = false;
+        this.hideDebugVisualization();
+        console.log('3D Debug mode disabled');
+    }
+    
+    updateDebugVisualization(worldPoint) {
+        if (!this.debugSphere) {
+            const geometry = new THREE.SphereGeometry(0.5, 8, 6);
+            const material = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+            this.debugSphere = new THREE.Mesh(geometry, material);
+            this.scene.add(this.debugSphere);
+        }
+        
+        this.debugSphere.position.copy(worldPoint);
+        this.debugSphere.visible = true;
+    }
+    
+    hideDebugVisualization() {
+        if (this.debugSphere) {
+            this.debugSphere.visible = false;
+        }
+    }
+    
+    // Smart Section Detection
+    detectHoveredSection(mouseYPosition) {
+        if (!this.currentConfig) return null;
+        
+        const app = window.app;
+        if (!app) return null;
+        
+        const interiorHeight = app.getInteriorHeight();
+        const dividers = [...app.currentConfig.shelfLayout].sort((a, b) => a.position - b.position);
+        const minSectionHeight = app.currentConfig.units === 'metric' ? 10 : 4; // 10cm or 4"
+        
+        // Empty shelf case
+        if (dividers.length === 0) {
+            // Check if mouse is within the shelf interior bounds
+            if (mouseYPosition >= 0 && mouseYPosition <= interiorHeight) {
+                // For empty shelf, the center position should be based on WHERE the mouse is
+                // The ghost should appear at the center of the entire shelf
+                const centerPosition = interiorHeight / 2;
+                
+                if (this.debugMode) {
+                    console.log(`Empty shelf: mouse at ${mouseYPosition.toFixed(2)}, ghost at center ${centerPosition.toFixed(2)}`);
+                }
+                
+                return {
+                    centerPosition: centerPosition,
+                    canAdd: interiorHeight >= minSectionHeight * 2,
+                    sectionIndex: 0,
+                    sectionBounds: { bottom: 0, top: interiorHeight }
+                };
+            } else {
+                if (this.debugMode) {
+                    console.log(`Mouse outside empty shelf bounds: ${mouseYPosition} not in 0 to ${interiorHeight}`);
+                }
+                return null; // Mouse is outside shelf bounds
+            }
+        }
+        
+        // Find which section the mouse is in
+        for (let i = 0; i <= dividers.length; i++) {
+            const bottomBound = i === 0 ? 0 : dividers[i - 1].position;
+            const topBound = i === dividers.length ? interiorHeight : dividers[i].position;
+            
+            if (mouseYPosition >= bottomBound && mouseYPosition <= topBound) {
+                const sectionHeight = topBound - bottomBound;
+                const centerPosition = bottomBound + (sectionHeight / 2);
+                
+                // Check if section is big enough to split
+                const canAdd = sectionHeight >= minSectionHeight * 2;
+                
+                return {
+                    centerPosition,
+                    canAdd,
+                    sectionIndex: i,
+                    sectionBounds: { bottom: bottomBound, top: topBound },
+                    sectionHeight
+                };
+            }
+        }
+        
+        return null;
+    }
+    
+    updateGhostDivider(sectionInfo) {
+        if (!sectionInfo || !sectionInfo.canAdd) {
+            this.hideGhostDivider();
+            return;
+        }
+        
+        if (!this.ghostDivider) {
+            this.createGhostDivider();
+        }
+        
+        // Convert section center to world position for 3D display
+        // sectionInfo.centerPosition is in current units, need to convert to inches first
+        const app = window.app;
+        const centerInInches = app ? app.toInches(sectionInfo.centerPosition) : sectionInfo.centerPosition;
+        const worldY = this.shelfToWorldPosition(centerInInches, this.currentConfig);
+        
+        if (this.debugMode) {
+            console.log(`Ghost divider: center=${sectionInfo.centerPosition.toFixed(2)}, centerInches=${centerInInches.toFixed(2)}, worldY=${worldY.toFixed(2)}`);
+        }
+        
+        this.ghostDivider.position.y = worldY;
+        this.ghostDivider.visible = true;
+    }
+    
+    createGhostDivider() {
+        if (!this.currentConfig) return;
+        
+        const thickness = this.currentConfig.materialThickness;
+        const shelfWidth = this.currentConfig.width - thickness;
+        const shelfDepth = this.currentConfig.depth;
+        
+        const geometry = new THREE.BoxGeometry(shelfWidth, thickness, shelfDepth);
+        const material = new THREE.MeshBasicMaterial({
+            color: 0x00ff00,
+            transparent: true,
+            opacity: 0.5,
+            side: THREE.DoubleSide,
+            depthTest: false // Render on top of other transparent objects
+        });
+        
+        this.ghostDivider = new THREE.Mesh(geometry, material);
+        this.ghostDivider.position.set(0, 0, 0.1); // Slightly forward to avoid z-fighting
+        this.ghostDivider.visible = false;
+        this.ghostDivider.renderOrder = 999; // Render after other objects
+        this.scene.add(this.ghostDivider);
+    }
+    
+    hideGhostDivider() {
+        if (this.ghostDivider) {
+            this.ghostDivider.visible = false;
+        }
     }
     
     animate() {
