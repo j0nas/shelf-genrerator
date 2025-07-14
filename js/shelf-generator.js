@@ -101,6 +101,23 @@ export class ShelfGenerator {
         console.log('✅ XState divider state machine initialized');
     }
     
+    // Helper methods to get state from XState (preferred over legacy state)
+    getCurrentState() {
+        return this.stateMachine.state?.value || 'normal';
+    }
+    
+    getSelectedDivider() {
+        return this.stateMachine.state?.context?.selectedDivider || null;
+    }
+    
+    getHoveredDivider() {
+        return this.stateMachine.state?.context?.hoveredDivider || null;
+    }
+    
+    isDragging() {
+        return this.getCurrentState() === 'dragging';
+    }
+    
     init(containerId) {
         this.container = document.getElementById(containerId);
         if (!this.container) {
@@ -1310,8 +1327,8 @@ export class ShelfGenerator {
     }
     
     selectDivider(dividerInfo) {
-        this.interactionState = 'SELECTED';
-        this.selectedDivider = dividerInfo;
+        // NOTE: State management is now handled by XState
+        // This method only handles visual effects
         
         // Apply strong selection highlight
         const mesh = dividerInfo.mesh;
@@ -1339,9 +1356,11 @@ export class ShelfGenerator {
     }
     
     deselectDivider() {
-        if (this.selectedDivider) {
+        // Get current selected divider from XState
+        const selectedDivider = this.getSelectedDivider();
+        if (selectedDivider) {
             // Restore original material
-            const mesh = this.selectedDivider.mesh;
+            const mesh = selectedDivider.mesh;
             if (mesh.userData.originalMaterial) {
                 mesh.material = mesh.userData.originalMaterial.clone();
             }
@@ -1349,16 +1368,16 @@ export class ShelfGenerator {
             this.hideMeasurements();
             this.hideDeleteButton();
             
-            console.log('Deselected divider:', this.selectedDivider.dividerId);
+            console.log('Deselected divider:', selectedDivider.dividerId);
         }
         
-        this.selectedDivider = null;
-        this.interactionState = 'NORMAL';
+        // NOTE: State management is now handled by XState
+        // This method only handles visual cleanup
     }
     
     startDrag(event) {
-        this.interactionState = 'DRAGGING';
-        this.isDragging = true;
+        // NOTE: State management is now handled by XState
+        // This method only handles camera controls and visual effects
         
         // Disable camera controls during drag
         this.controls.enabled = false;
@@ -1509,30 +1528,7 @@ export class ShelfGenerator {
         }
     }
     
-    endDrag(event) {
-        if (this.interactionState === 'DRAGGING') {
-            // Re-enable camera controls
-            this.controls.enabled = true;
-            
-            // Commit the position change to the app state
-            const app = window.app;
-            if (app && this.selectedDivider) {
-                app.updateDivider(this.selectedDivider.dividerId, 'position', this.selectedDivider.position);
-                
-                if (this.debugMode) {
-                    console.log(`Committed divider position: ${this.selectedDivider.position.toFixed(2)}`);
-                }
-            }
-            
-            this.interactionState = 'SELECTED'; // Return to selected state
-            this.isDragging = false;
-            this.dragStartPosition = null;
-            
-            if (this.debugMode) {
-                console.log('Ended dragging divider');
-            }
-        }
-    }
+    // endDrag method removed - XState now handles drag end via commitDragPosition action
     
     // Measurement Overlay System
     showMeasurements(dividerInfo) {
