@@ -1,0 +1,19 @@
+{
+  "name": "shelf-generator",
+  "version": "1.0.0",
+  "description": "3D shelf generator for woodworkers",
+  "main": "index.html",
+  "scripts": {
+    "start": "serve -l 3000",
+    "dev": "serve -l 3000"
+  },
+  "keywords": ["woodworking", "shelf", "3d", "cutlist"],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "three": "^0.157.0"
+  },
+  "devDependencies": {
+    "serve": "^14.2.1"
+  }
+}
