@@ -1,6 +1,7 @@
 import { ShelfGenerator } from './shelf-generator.js';
 import { CutListGenerator } from './cutlist-generator.js';
 import { UI } from './ui.js';
+import { testStateMachine } from '../dist/js/state-machine-test.js';
 
 class App {
     constructor() {
@@ -568,4 +569,8 @@ let app;
 document.addEventListener('DOMContentLoaded', () => {
     app = new App();
     window.app = app; // Make globally accessible for 3D interactions
+    
+    // Test our XState setup
+    console.log('🚀 Starting XState Migration - Phase 5, Week 1');
+    testStateMachine();
 });

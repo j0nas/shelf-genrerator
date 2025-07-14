@@ -7,13 +7,22 @@
     "start": "serve -l 3000",
     "dev": "serve -l 3000"
   },
-  "keywords": ["woodworking", "shelf", "3d", "cutlist"],
+  "keywords": [
+    "woodworking",
+    "shelf",
+    "3d",
+    "cutlist"
+  ],
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "three": "^0.157.0"
+    "@xstate/inspect": "^0.8.0",
+    "three": "^0.157.0",
+    "xstate": "^4.38.3"
   },
   "devDependencies": {
-    "serve": "^14.2.1"
+    "@types/three": "^0.178.1",
+    "serve": "^14.2.1",
+    "typescript": "^5.8.3"
   }
 }
