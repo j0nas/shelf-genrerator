@@ -18,6 +18,19 @@ export class ShelfGenerator {
         this.debugSphere = null;
         this.ghostDivider = null;
         this.hoveredDivider = null;
+        
+        // Multi-state interaction system
+        this.interactionState = 'NORMAL'; // NORMAL, HOVERING, SELECTED, DRAGGING
+        this.selectedDivider = null;
+        this.isDragging = false;
+        this.dragStartPosition = null;
+        this.measurementOverlays = [];
+        this.deleteButton = null;
+        this.deleteButtonHovered = false;
+        this.processingClick = false;
+        this.justDeleted = false; // Flag to prevent same-click processing after delete
+        this.justDeselected = false; // Flag to prevent same-click processing after deselect
+        this.readyToDrag = false; // Flag to indicate mouse is down on selected divider
     }
     
     init(containerId) {
@@ -67,12 +80,44 @@ export class ShelfGenerator {
     
     setupControls() {
         this.controls = new OrbitControls(this.camera, this.renderer.domElement);
+        
+        // Smooth damping
         this.controls.enableDamping = true;
-        this.controls.dampingFactor = 0.05;
-        this.controls.screenSpacePanning = false;
+        this.controls.dampingFactor = 0.08;
+        
+        // MUCH better panning
+        this.controls.screenSpacePanning = true; // This is key!
+        this.controls.panSpeed = 1.0;
+        
+        // Zoom settings
         this.controls.minDistance = 10;
         this.controls.maxDistance = 200;
-        this.controls.maxPolarAngle = Math.PI / 2;
+        this.controls.zoomSpeed = 0.3; // Much less sensitive zooming
+        
+        // Rotation settings  
+        this.controls.rotateSpeed = 0.8;
+        this.controls.maxPolarAngle = Math.PI / 2; // Prevent going below ground
+        
+        // Key bindings for better control
+        this.controls.keys = {
+            LEFT: 'ArrowLeft',   // Arrow keys to pan
+            UP: 'ArrowUp',
+            RIGHT: 'ArrowRight', 
+            BOTTOM: 'ArrowDown'
+        };
+        
+        // Mouse bindings
+        this.controls.mouseButtons = {
+            LEFT: THREE.MOUSE.ROTATE,     // Left drag = rotate
+            MIDDLE: THREE.MOUSE.DOLLY,    // Middle = zoom
+            RIGHT: THREE.MOUSE.PAN        // Right drag = pan (much smoother!)
+        };
+        
+        // Touch settings for mobile
+        this.controls.touches = {
+            ONE: THREE.TOUCH.ROTATE,      // One finger = rotate
+            TWO: THREE.TOUCH.DOLLY_PAN    // Two finger = zoom + pan
+        };
     }
     
     setupLighting() {
@@ -100,6 +145,8 @@ export class ShelfGenerator {
     setup3DInteraction() {
         this.renderer.domElement.addEventListener('mousemove', (event) => this.onMouseMove(event));
         this.renderer.domElement.addEventListener('click', (event) => this.onMouseClick(event));
+        this.renderer.domElement.addEventListener('mousedown', (event) => this.onMouseDown(event));
+        this.renderer.domElement.addEventListener('mouseup', (event) => this.onMouseUp(event));
     }
     
     onMouseMove(event) {
@@ -113,40 +160,78 @@ export class ShelfGenerator {
         // Update raycaster
         this.raycaster.setFromCamera(this.mouse, this.camera);
         
+        // Handle different interaction states
+        if (this.interactionState === 'DRAGGING') {
+            this.handleDragMove(event);
+            return;
+        }
+        
+        // Check if we should start dragging (mouse down on selected divider + movement)
+        if (this.readyToDrag && this.dragStartPosition) {
+            const currentMouseX = event.clientX - rect.left;
+            const currentMouseY = event.clientY - rect.top;
+            const deltaX = currentMouseX - this.dragStartPosition.x;
+            const deltaY = currentMouseY - this.dragStartPosition.y;
+            const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+            
+            // Only start drag if mouse moved more than a small threshold (5 pixels)
+            if (distance > 5) {
+                console.log('Mouse moved', distance.toFixed(1), 'pixels - starting drag now');
+                this.readyToDrag = false; // Don't check again
+                this.startDrag(event);
+                return;
+            }
+        }
+        
+        // Check for delete button hover first
+        this.updateDeleteButtonHover();
+        
         // First check if we're hovering over existing divider geometry
         const existingDivider = this.detectHoveredExistingDivider();
         
         if (existingDivider) {
-            // Hovering over existing divider - show highlight, hide ghost
-            this.updateExistingDividerHighlight(existingDivider);
+            // Check if this is the same as selected divider
+            if (this.selectedDivider && existingDivider.dividerId === this.selectedDivider.dividerId) {
+                // Hovering over selected divider - maintain selected state
+                this.interactionState = 'SELECTED';
+            } else {
+                // Hovering over different divider
+                this.interactionState = 'HOVERING';
+                this.hoveredDivider = existingDivider;
+                this.updateHoverState(existingDivider);
+            }
             this.hideGhostDivider();
             
             if (this.debugMode) {
-                console.log('Hovering existing divider:', existingDivider);
+                console.log('Hovering existing divider:', existingDivider, 'State:', this.interactionState);
             }
         } else {
-            // Not hovering existing divider - check for ghost divider position
-            this.clearExistingDividerHighlight();
-            
-            const result = this.getShelfInteriorIntersection();
-            if (result !== null) {
-                if (this.debugMode) {
-                    const unit = result.units === 'metric' ? 'cm' : '"';
-                    console.log(`Shelf interior Y position: ${result.position.toFixed(2)}${unit} from bottom`);
-                    this.updateDebugVisualization(result.worldPoint);
-                }
+            // Not hovering existing divider
+            if (this.interactionState !== 'SELECTED') {
+                this.interactionState = 'NORMAL';
+                this.clearHoverState();
                 
-                // Smart section detection and ghost divider
-                const sectionInfo = this.detectHoveredSection(result.position);
-                if (this.debugMode) {
-                    console.log('Section info:', sectionInfo);
+                // Check for ghost divider position
+                const result = this.getShelfInteriorIntersection();
+                if (result !== null) {
+                    if (this.debugMode) {
+                        const unit = result.units === 'metric' ? 'cm' : '"';
+                        console.log(`Shelf interior Y position: ${result.position.toFixed(2)}${unit} from bottom`);
+                        this.updateDebugVisualization(result.worldPoint);
+                    }
+                    
+                    // Smart section detection and ghost divider
+                    const sectionInfo = this.detectHoveredSection(result.position);
+                    if (this.debugMode) {
+                        console.log('Section info:', sectionInfo);
+                    }
+                    this.updateGhostDivider(sectionInfo);
+                } else {
+                    if (this.debugMode) {
+                        this.hideDebugVisualization();
+                    }
+                    this.hideGhostDivider();
                 }
-                this.updateGhostDivider(sectionInfo);
-            } else {
-                if (this.debugMode) {
-                    this.hideDebugVisualization();
-                }
-                this.hideGhostDivider();
             }
         }
     }
@@ -157,27 +242,100 @@ export class ShelfGenerator {
         const app = window.app;
         if (!app) return;
         
-        // Check if we're clicking on an existing divider to remove it
-        if (this.hoveredDivider) {
-            if (this.debugMode) {
-                console.log(`Removing divider: ${this.hoveredDivider.dividerId}`);
+        // Update raycaster with current mouse position for this click
+        const rect = this.renderer.domElement.getBoundingClientRect();
+        this.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+        this.mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+        this.raycaster.setFromCamera(this.mouse, this.camera);
+        
+        console.log(`Click event - Current state: ${this.interactionState}`);
+        
+        // Handle selected divider clicks
+        if (this.interactionState === 'SELECTED') {
+            console.log('In SELECTED state - checking what was clicked');
+            
+            // Safety check: Make sure we still have a selected divider
+            if (!this.selectedDivider) {
+                console.log('No selected divider found - switching to normal state');
+                this.interactionState = 'NORMAL';
+                return;
             }
-            app.removeDivider(this.hoveredDivider.dividerId);
+            
+            // FIRST: Check if delete button is clicked 
+            if (this.deleteButton) {
+                const deleteButtonClicked = this.checkDeleteButtonClick();
+                if (deleteButtonClicked) {
+                    console.log('Delete button clicked - deleting divider');
+                    app.removeDivider(this.selectedDivider.dividerId);
+                    return; // Exit immediately after deletion
+                }
+            }
+            
+            // Check if clicking on the selected divider itself (for future drag preparation)
+            const clickedDivider = this.detectHoveredExistingDivider();
+            if (clickedDivider && this.selectedDivider && clickedDivider.dividerId === this.selectedDivider.dividerId) {
+                console.log('Clicked on selected divider itself - staying selected');
+                return;
+            }
+            
+            // Clicking elsewhere - deselect
+            console.log('Clicking elsewhere while divider selected - deselecting');
+            this.deselectDivider();
+            return; // Exit after deselection
+        }
+        
+        // SIMPLE LOGIC: If hovering a divider, select it
+        if (this.interactionState === 'HOVERING' && this.hoveredDivider) {
+            console.log('Selecting hovered divider');
+            this.selectDivider(this.hoveredDivider);
             return;
         }
         
-        // Otherwise, check if we have a valid ghost divider position to add
-        const result = this.getShelfInteriorIntersection();
-        if (result !== null) {
-            const sectionInfo = this.detectHoveredSection(result.position);
-            if (sectionInfo && sectionInfo.canAdd) {
-                // Add divider at the ghost position
-                if (this.debugMode) {
+        // SIMPLE LOGIC: Only add dividers in NORMAL state
+        if (this.interactionState === 'NORMAL') {
+            console.log('In NORMAL state - checking for ghost divider');
+            const result = this.getShelfInteriorIntersection();
+            if (result !== null) {
+                const sectionInfo = this.detectHoveredSection(result.position);
+                if (sectionInfo && sectionInfo.canAdd) {
                     console.log(`Adding divider at position: ${sectionInfo.centerPosition.toFixed(2)}`);
+                    app.addDividerAtPosition(sectionInfo.centerPosition);
                 }
-                app.addDividerAtPosition(sectionInfo.centerPosition);
             }
         }
+    }
+    
+    onMouseDown(event) {
+        console.log('onMouseDown - state:', this.interactionState, 'selectedDivider:', !!this.selectedDivider);
+        if (this.interactionState === 'SELECTED' && this.selectedDivider) {
+            console.log('Selected divider mousedown - PREPARING for potential drag (not starting yet)');
+            // Don't start drag immediately - wait for mouse movement
+            // Just store that we're ready to start dragging if mouse moves
+            this.readyToDrag = true;
+            
+            const rect = this.renderer.domElement.getBoundingClientRect();
+            this.dragStartPosition = {
+                x: event.clientX - rect.left,
+                y: event.clientY - rect.top
+            };
+        } else {
+            console.log('NOT preparing drag - conditions not met');
+            this.readyToDrag = false;
+        }
+    }
+    
+    onMouseUp(event) {
+        console.log('onMouseUp - state:', this.interactionState, 'isDragging:', this.isDragging, 'readyToDrag:', this.readyToDrag);
+        
+        if (this.interactionState === 'DRAGGING') {
+            console.log('Calling endDrag from onMouseUp');
+            this.endDrag(event);
+        } else {
+            console.log('NOT calling endDrag - state is not DRAGGING');
+        }
+        
+        // Reset the ready to drag flag
+        this.readyToDrag = false;
     }
     
     getShelfInteriorIntersection() {
@@ -240,6 +398,9 @@ export class ShelfGenerator {
     
     updateShelf(config) {
         this.currentConfig = config; // Store for 3D interaction
+        
+        // Clean up interaction state when shelf is regenerated
+        this.cleanupInteractionState();
         
         while(this.shelfGroup.children.length > 0) {
             const child = this.shelfGroup.children[0];
@@ -1005,6 +1166,562 @@ export class ShelfGenerator {
         }
         
         this.hoveredDivider = null;
+    }
+    
+    // New Multi-State Interaction Methods
+    updateHoverState(dividerInfo) {
+        // Clear any previous state
+        this.clearHoverState();
+        
+        // Store hovered divider
+        this.hoveredDivider = dividerInfo;
+        
+        // Apply subtle hover highlight
+        const mesh = dividerInfo.mesh;
+        if (mesh.material) {
+            if (!mesh.userData.originalMaterial) {
+                mesh.userData.originalMaterial = mesh.material.clone();
+            }
+            
+            // Subtle blue highlight for hover state
+            mesh.material = new THREE.MeshBasicMaterial({
+                color: 0x4444ff,
+                transparent: true,
+                opacity: 0.6,
+                side: THREE.DoubleSide
+            });
+        }
+        
+        // Show measurements
+        this.showMeasurements(dividerInfo);
+    }
+    
+    clearHoverState() {
+        this.clearExistingDividerHighlight();
+        this.hideMeasurements();
+    }
+    
+    selectDivider(dividerInfo) {
+        this.interactionState = 'SELECTED';
+        this.selectedDivider = dividerInfo;
+        
+        // Apply strong selection highlight
+        const mesh = dividerInfo.mesh;
+        if (mesh.material) {
+            if (!mesh.userData.originalMaterial) {
+                mesh.userData.originalMaterial = mesh.material.clone();
+            }
+            
+            // Strong yellow highlight for selected state
+            mesh.material = new THREE.MeshBasicMaterial({
+                color: 0xffaa00,
+                transparent: true,
+                opacity: 0.8,
+                side: THREE.DoubleSide
+            });
+        }
+        
+        // Show measurements and delete button
+        this.showMeasurements(dividerInfo);
+        this.showDeleteButton(dividerInfo);
+        
+        if (this.debugMode) {
+            console.log('Selected divider:', dividerInfo.dividerId);
+        }
+    }
+    
+    deselectDivider() {
+        if (this.selectedDivider) {
+            // Restore original material
+            const mesh = this.selectedDivider.mesh;
+            if (mesh.userData.originalMaterial) {
+                mesh.material = mesh.userData.originalMaterial.clone();
+            }
+            
+            this.hideMeasurements();
+            this.hideDeleteButton();
+            
+            console.log('Deselected divider:', this.selectedDivider.dividerId);
+        }
+        
+        this.selectedDivider = null;
+        this.interactionState = 'NORMAL';
+    }
+    
+    startDrag(event) {
+        this.interactionState = 'DRAGGING';
+        this.isDragging = true;
+        
+        // Disable camera controls during drag
+        this.controls.enabled = false;
+        
+        // IMPORTANT: Always update dragStartPosition to current mouse position
+        // This prevents jumps when starting a new drag from a different position
+        const rect = this.renderer.domElement.getBoundingClientRect();
+        this.dragStartPosition = {
+            x: event.clientX - rect.left,
+            y: event.clientY - rect.top
+        };
+        
+        if (this.debugMode) {
+            console.log('Started dragging divider:', this.selectedDivider.dividerId);
+            console.log('Drag start position:', this.dragStartPosition);
+        }
+    }
+    
+    handleDragMove(event) {
+        if (!this.selectedDivider || !this.isDragging) return;
+        
+        const app = window.app;
+        if (!app) return;
+        
+        // Update mouse position and raycaster
+        const rect = this.renderer.domElement.getBoundingClientRect();
+        this.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+        this.mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+        this.raycaster.setFromCamera(this.mouse, this.camera);
+        
+        // Use the same raycasting approach as ghost divider positioning
+        const result = this.getShelfInteriorIntersection();
+        if (result !== null) {
+            // Apply constraints to the new position
+            const constrainedPosition = this.calculateConstrainedPositionAbsolute(result.position);
+            
+            if (constrainedPosition !== null) {
+                // Update divider position in real-time
+                this.updateDividerPosition(constrainedPosition);
+                
+                // Update measurements
+                if (this.measurementOverlays.length > 0) {
+                    this.showMeasurements(this.selectedDivider);
+                }
+                
+                if (this.debugMode) {
+                    console.log(`Dragging to position: ${constrainedPosition.toFixed(2)} (cursor at: ${result.position.toFixed(2)})`);
+                }
+            }
+        }
+    }
+    
+    calculateConstrainedPositionAbsolute(absolutePosition) {
+        const app = window.app;
+        if (!app || !this.selectedDivider) return null;
+        
+        const interiorHeight = app.getInteriorHeight();
+        const dividers = [...app.currentConfig.shelfLayout].sort((a, b) => a.position - b.position);
+        const currentIndex = dividers.findIndex(d => d.id === this.selectedDivider.dividerId);
+        
+        // Define minimum spacing
+        const minSpacing = app.currentConfig.units === 'metric' ? 5 : 2; // 5cm or 2"
+        
+        // Calculate constraints
+        let minPosition = minSpacing; // Bottom constraint
+        let maxPosition = interiorHeight - minSpacing; // Top constraint
+        
+        // Constraint from divider below
+        if (currentIndex > 0) {
+            minPosition = dividers[currentIndex - 1].position + minSpacing;
+        }
+        
+        // Constraint from divider above
+        if (currentIndex < dividers.length - 1) {
+            maxPosition = dividers[currentIndex + 1].position - minSpacing;
+        }
+        
+        // Apply constraints
+        let newPosition = Math.max(minPosition, Math.min(maxPosition, absolutePosition));
+        
+        // Optional: Snap to reasonable increments
+        const snapIncrement = app.currentConfig.units === 'metric' ? 0.5 : 0.25; // 0.5cm or 0.25"
+        newPosition = Math.round(newPosition / snapIncrement) * snapIncrement;
+        
+        return newPosition;
+    }
+
+    // Keep the old method for backwards compatibility (though it's no longer used)
+    calculateConstrainedPosition(worldDelta) {
+        const app = window.app;
+        if (!app || !this.selectedDivider) return null;
+        
+        const interiorHeight = app.getInteriorHeight();
+        const dividers = [...app.currentConfig.shelfLayout].sort((a, b) => a.position - b.position);
+        const currentIndex = dividers.findIndex(d => d.id === this.selectedDivider.dividerId);
+        const currentPosition = this.selectedDivider.position;
+        
+        // Convert world delta to shelf units
+        const deltaInShelfUnits = app.fromInches(worldDelta);
+        let newPosition = currentPosition + deltaInShelfUnits;
+        
+        // Define minimum spacing
+        const minSpacing = app.currentConfig.units === 'metric' ? 5 : 2; // 5cm or 2"
+        
+        // Calculate constraints
+        let minPosition = minSpacing; // Bottom constraint
+        let maxPosition = interiorHeight - minSpacing; // Top constraint
+        
+        // Constraint from divider below
+        if (currentIndex > 0) {
+            minPosition = dividers[currentIndex - 1].position + minSpacing;
+        }
+        
+        // Constraint from divider above
+        if (currentIndex < dividers.length - 1) {
+            maxPosition = dividers[currentIndex + 1].position - minSpacing;
+        }
+        
+        // Apply constraints
+        newPosition = Math.max(minPosition, Math.min(maxPosition, newPosition));
+        
+        // Optional: Snap to reasonable increments
+        const snapIncrement = app.currentConfig.units === 'metric' ? 0.5 : 0.25; // 0.5cm or 0.25"
+        newPosition = Math.round(newPosition / snapIncrement) * snapIncrement;
+        
+        return newPosition;
+    }
+    
+    updateDividerPosition(newPosition) {
+        if (!this.selectedDivider) return;
+        
+        const app = window.app;
+        if (!app) return;
+        
+        // Update the 3D mesh position
+        const thickness = this.currentConfig.materialThickness;
+        const baseY = thickness;
+        const worldY = baseY + app.toInches(newPosition);
+        
+        this.selectedDivider.mesh.position.y = worldY;
+        
+        // Update the divider data
+        this.selectedDivider.position = newPosition;
+        
+        // Update the delete button position if visible
+        if (this.deleteButton) {
+            this.deleteButton.position.y = worldY;
+        }
+    }
+    
+    endDrag(event) {
+        if (this.interactionState === 'DRAGGING') {
+            // Re-enable camera controls
+            this.controls.enabled = true;
+            
+            // Commit the position change to the app state
+            const app = window.app;
+            if (app && this.selectedDivider) {
+                app.updateDivider(this.selectedDivider.dividerId, 'position', this.selectedDivider.position);
+                
+                if (this.debugMode) {
+                    console.log(`Committed divider position: ${this.selectedDivider.position.toFixed(2)}`);
+                }
+            }
+            
+            this.interactionState = 'SELECTED'; // Return to selected state
+            this.isDragging = false;
+            this.dragStartPosition = null;
+            
+            if (this.debugMode) {
+                console.log('Ended dragging divider');
+            }
+        }
+    }
+    
+    // Measurement Overlay System
+    showMeasurements(dividerInfo) {
+        // Clear any existing measurements
+        this.hideMeasurements();
+        
+        const app = window.app;
+        if (!app) return;
+        
+        const interiorHeight = app.getInteriorHeight();
+        const dividers = [...app.currentConfig.shelfLayout].sort((a, b) => a.position - b.position);
+        const currentPosition = dividerInfo.position;
+        const units = app.currentConfig.units === 'metric' ? 'cm' : '"';
+        
+        // Calculate distances above and below
+        let distanceBelow = currentPosition; // Distance to bottom
+        let distanceAbove = interiorHeight - currentPosition; // Distance to top
+        
+        // Find adjacent dividers
+        const currentIndex = dividers.findIndex(d => d.id === dividerInfo.dividerId);
+        if (currentIndex > 0) {
+            distanceBelow = currentPosition - dividers[currentIndex - 1].position;
+        }
+        if (currentIndex < dividers.length - 1) {
+            distanceAbove = dividers[currentIndex + 1].position - currentPosition;
+        }
+        
+        if (this.debugMode) {
+            console.log(`Measurement debug:
+                Interior height: ${interiorHeight.toFixed(2)}${units}
+                Current position: ${currentPosition.toFixed(2)}${units}
+                Current index: ${currentIndex}
+                Distance below: ${distanceBelow.toFixed(2)}${units}
+                Distance above: ${distanceAbove.toFixed(2)}${units}
+                Total dividers: ${dividers.length}`);
+        }
+        
+        // Create measurement text objects
+        const worldY = dividerInfo.mesh.position.y;
+        const worldX = dividerInfo.mesh.position.x;
+        const worldZ = dividerInfo.mesh.position.z + this.currentConfig.depth / 2 + 2; // In front of shelf
+        
+        // Create text sprites for measurements
+        this.createMeasurementText(
+            `${distanceBelow.toFixed(1)}${units}`,
+            worldX, 
+            worldY - (app.toInches(distanceBelow) / 2), 
+            worldZ,
+            'below'
+        );
+        
+        this.createMeasurementText(
+            `${distanceAbove.toFixed(1)}${units}`,
+            worldX,
+            worldY + (app.toInches(distanceAbove) / 2),
+            worldZ,
+            'above'
+        );
+        
+        if (this.debugMode) {
+            console.log(`Measurements: ${distanceBelow.toFixed(1)}${units} below, ${distanceAbove.toFixed(1)}${units} above`);
+        }
+    }
+    
+    createMeasurementText(text, x, y, z, type) {
+        // Create canvas for text
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d');
+        canvas.width = 200;
+        canvas.height = 80;
+        
+        // Draw background with border
+        context.fillStyle = 'rgba(255, 255, 255, 0.95)';
+        context.fillRect(0, 0, canvas.width, canvas.height);
+        
+        // Draw border
+        context.strokeStyle = type === 'below' ? '#2196F3' : '#4CAF50';
+        context.lineWidth = 3;
+        context.strokeRect(2, 2, canvas.width - 4, canvas.height - 4);
+        
+        // Draw text - black and larger
+        context.fillStyle = '#000000';
+        context.font = 'bold 32px Arial';
+        context.textAlign = 'center';
+        context.textBaseline = 'middle';
+        context.fillText(text, canvas.width / 2, canvas.height / 2);
+        
+        // Create texture and sprite
+        const texture = new THREE.CanvasTexture(canvas);
+        const spriteMaterial = new THREE.SpriteMaterial({ map: texture });
+        const sprite = new THREE.Sprite(spriteMaterial);
+        
+        // Position and scale the sprite - larger
+        sprite.position.set(x, y, z);
+        sprite.scale.set(6, 3, 1); // Bigger labels
+        
+        // Store for cleanup
+        sprite.userData = { type: 'measurement', measurementType: type };
+        this.measurementOverlays.push(sprite);
+        this.scene.add(sprite);
+    }
+    
+    hideMeasurements() {
+        // Remove all measurement overlays
+        this.measurementOverlays.forEach(sprite => {
+            this.scene.remove(sprite);
+            if (sprite.material.map) {
+                sprite.material.map.dispose();
+            }
+            sprite.material.dispose();
+        });
+        this.measurementOverlays = [];
+    }
+    
+    showDeleteButton(dividerInfo) {
+        // Clear any existing delete button
+        this.hideDeleteButton();
+        
+        const worldY = dividerInfo.mesh.position.y;
+        const worldX = dividerInfo.mesh.position.x + this.currentConfig.width / 2 - 2; // Right side of shelf
+        const worldZ = dividerInfo.mesh.position.z + this.currentConfig.depth / 2 + 5; // Further in front of shelf
+        
+        // Create delete button
+        this.createDeleteButton(worldX, worldY, worldZ, dividerInfo.dividerId);
+        
+        console.log(`Delete button positioned at: x=${worldX.toFixed(2)}, y=${worldY.toFixed(2)}, z=${worldZ.toFixed(2)}`);
+        
+        if (this.debugMode) {
+            console.log('Showing delete button for divider:', dividerInfo.dividerId);
+        }
+    }
+    
+    createDeleteButton(x, y, z, dividerId) {
+        // Create larger canvas for bigger button
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d');
+        canvas.width = 100;
+        canvas.height = 100;
+        
+        this.redrawDeleteButton(context, false); // Start in normal state
+        
+        // Create texture and sprite
+        const texture = new THREE.CanvasTexture(canvas);
+        const spriteMaterial = new THREE.SpriteMaterial({ 
+            map: texture,
+            transparent: true
+        });
+        const sprite = new THREE.Sprite(spriteMaterial);
+        
+        // Position and scale the sprite - much bigger
+        sprite.position.set(x, y, z);
+        sprite.scale.set(4, 4, 1); // Much larger button
+        
+        // Ensure it renders on top
+        sprite.renderOrder = 1000; // Higher than ghost divider
+        sprite.material.depthTest = false; // Always render on top
+        
+        // Store metadata for click detection
+        sprite.userData = { 
+            type: 'delete-button', 
+            dividerId: dividerId,
+            isInteractable: true,
+            canvas: canvas,
+            context: context
+        };
+        
+        this.deleteButton = sprite;
+        this.scene.add(sprite);
+        
+        console.log('Delete button created and added to scene');
+    }
+    
+    redrawDeleteButton(context, isHovered) {
+        const centerX = 50;
+        const centerY = 50;
+        const radius = 40;
+        
+        // Clear canvas
+        context.clearRect(0, 0, 100, 100);
+        
+        // Draw drop shadow for 3D effect
+        if (isHovered) {
+            context.shadowColor = 'rgba(0, 0, 0, 0.4)';
+            context.shadowBlur = 8;
+            context.shadowOffsetX = 2;
+            context.shadowOffsetY = 2;
+        }
+        
+        // Draw circular background
+        context.fillStyle = isHovered ? '#d32f2f' : '#f44336'; // Darker when hovered
+        context.beginPath();
+        context.arc(centerX, centerY, radius, 0, Math.PI * 2);
+        context.fill();
+        
+        // Reset shadow
+        context.shadowColor = 'transparent';
+        context.shadowBlur = 0;
+        context.shadowOffsetX = 0;
+        context.shadowOffsetY = 0;
+        
+        // Draw white border - thicker when hovered
+        context.strokeStyle = '#ffffff';
+        context.lineWidth = isHovered ? 5 : 3;
+        context.beginPath();
+        context.arc(centerX, centerY, radius, 0, Math.PI * 2);
+        context.stroke();
+        
+        // Draw X symbol - thicker when hovered
+        context.strokeStyle = '#ffffff';
+        context.lineWidth = isHovered ? 7 : 5;
+        context.lineCap = 'round';
+        context.beginPath();
+        context.moveTo(centerX - 18, centerY - 18);
+        context.lineTo(centerX + 18, centerY + 18);
+        context.moveTo(centerX + 18, centerY - 18);
+        context.lineTo(centerX - 18, centerY + 18);
+        context.stroke();
+        
+        // Add subtle inner highlight when hovered
+        if (isHovered) {
+            context.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+            context.lineWidth = 2;
+            context.beginPath();
+            context.arc(centerX, centerY, radius - 8, 0, Math.PI * 2);
+            context.stroke();
+        }
+    }
+    
+    hideDeleteButton() {
+        if (this.deleteButton) {
+            this.scene.remove(this.deleteButton);
+            if (this.deleteButton.material.map) {
+                this.deleteButton.material.map.dispose();
+            }
+            this.deleteButton.material.dispose();
+            this.deleteButton = null;
+        }
+    }
+    
+    updateDeleteButtonHover() {
+        if (!this.deleteButton) {
+            this.deleteButtonHovered = false;
+            return;
+        }
+        
+        // Raycast against the delete button
+        const intersects = this.raycaster.intersectObject(this.deleteButton);
+        const isHovered = intersects.length > 0;
+        
+        // Update hover state if changed
+        if (isHovered !== this.deleteButtonHovered) {
+            this.deleteButtonHovered = isHovered;
+            
+            // Redraw button with new state
+            const context = this.deleteButton.userData.context;
+            this.redrawDeleteButton(context, isHovered);
+            
+            // Update texture
+            this.deleteButton.material.map.needsUpdate = true;
+            
+            if (this.debugMode) {
+                console.log('Delete button hover:', isHovered);
+            }
+        }
+    }
+    
+    checkDeleteButtonClick() {
+        if (!this.deleteButton) {
+            return false;
+        }
+        
+        // Raycast against the delete button
+        const intersects = this.raycaster.intersectObject(this.deleteButton);
+        
+        if (this.debugMode) {
+            console.log(`Delete button raycast: ${intersects.length} intersections`);
+        }
+        
+        return intersects.length > 0;
+    }
+    
+    cleanupInteractionState() {
+        // Clear all interactive elements when shelf is regenerated
+        this.hideMeasurements();
+        this.hideDeleteButton();
+        this.hideGhostDivider();
+        
+        // Reset state
+        this.interactionState = 'NORMAL';
+        this.selectedDivider = null;
+        this.hoveredDivider = null;
+        this.isDragging = false;
+        this.dragStartPosition = null;
+        this.deleteButtonHovered = false;
+        this.justDeleted = false; // Reset delete flag
+        this.justDeselected = false; // Reset deselect flag
+        this.readyToDrag = false; // Reset drag flag
     }
     
     animate() {

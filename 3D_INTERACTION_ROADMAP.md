@@ -3,24 +3,25 @@
 ## Vision
 Transform the shelf generator from traditional left-panel controls to direct 3D manipulation with **smart sectioning** - where users can split existing sections at their center points by hovering and clicking directly on the 3D model.
 
-## Current State ✅ CORE FUNCTIONALITY ACHIEVED
+## Current State ✅ FOUNDATION COMPLETE, READY FOR ADVANCED FEATURES
 - **Direct 3D Manipulation**: Hover empty space → green ghost → click to add divider
-- **Direct 3D Removal**: Hover existing divider → red highlight → click to remove
+- **Basic Divider Removal**: Hover existing divider → red highlight → click to remove  
 - **Smart Sectioning**: Ghost appears at section centers, respects minimum sizes
 - **Seamless Integration**: 3D interactions sync with left panel controls
 - **Unit Support**: Works flawlessly with metric/imperial conversion
-- **Visual Language**: Green = Add, Red = Remove - intuitive and clear
+- **Coordinate System**: Virtual plane raycasting provides pixel-perfect accuracy
 
-**Major Breakthrough**: Phases 1-3 + 5 completed ahead of schedule with elegant integration!
+**Next Level Goal**: Transform simple click-to-remove into comprehensive drag-to-position with measurements and multi-state interaction!
 
-## Target State - Smart Sectioning Approach
-- **Smart positioning**: Hover any section → ghost divider appears at section's center
-- **Binary tree logic**: Each divider splits its section into two equal parts
-- **No arbitrary positioning**: Always meaningful, centered splits
-- **Intuitive workflow**: Empty shelf → center split → each half can be split → recursive
-- Hover existing dividers → highlight + "×" button for removal
+## Target State - Professional 3D Direct Manipulation
+- **Smart Adding**: Hover empty sections → ghost divider at center → click to add
+- **Smart Positioning**: Hover existing dividers → show measurements → click to select → drag to reposition
+- **Smart Removal**: Selected divider shows floating "×" button → click to delete
+- **Live Feedback**: Real-time measurements, drag constraints, and positioning guides
+- **State Management**: Clear visual states (hover/selected/dragging) with intuitive transitions
+- **Professional Feel**: CAD-level precision with consumer-friendly discoverability
 - Left panel becomes pure configuration (materials, dimensions, etc.)
-- Divider-specific controls appear contextually
+- All divider manipulation happens directly in 3D space
 
 ---
 
@@ -126,25 +127,87 @@ Transform the shelf generator from traditional left-panel controls to direct 3D 
 
 ---
 
-### Phase 4: 3D UI Buttons ⏸️ OPTIONAL (Core functionality achieved without buttons)
-**Goal:** Add floating UI buttons in 3D space
+### Phase 4: Advanced Divider Manipulation ✅ COMPLETED (With Bug Fixes)
+**Goal:** Multi-state interaction system with drag-to-move and enhanced visual feedback
+
+**MAJOR BUG DISCOVERED & FIXED:**
+- **Issue**: Clicking anywhere while divider selected caused unwanted divider movement
+- **Root Cause**: Mousedown on selected divider immediately started drag, mouseup ended drag and moved divider
+- **Solution**: Added movement threshold - drag only starts after 5+ pixel mouse movement
+- **Debugging Lesson**: Should have logged ALL mouse events (down/up/move/click) from start
+
+**Three-State Interaction Design: ✅ IMPLEMENTED**
+
+**State 1: Hover (Information Mode)** ✅
+- Show distance measurements above/below divider
+- Subtle visual indicator of interactivity
+- Display compartment heights in current units
+
+**State 2: Selected (Action Mode)** ✅  
+- Click divider to select → strong highlight + floating "×" button
+- Enable drag-to-move functionality (with proper movement threshold)
+- Show drag handles or positioning guides
+- Clear visual feedback that divider is in "action mode"
+
+**State 3: Dragging (Live Positioning)** ✅
+- Real-time position updates during drag
+- Live measurement feedback
+- Smart constraints (min/max positions, collision detection)
+- Snap to reasonable increments
+- Visual feedback for valid/invalid positions
 
 **Tasks:**
-- [ ] Create 3D button geometries ("+" and "×")
-- [ ] Position buttons to follow mouse/hover target
-- [ ] Handle button visibility based on camera angle/distance
-- [ ] Add button hover effects (scale, color change)
-- [ ] Ensure buttons don't interfere with shelf geometry
+- [x] Implement three-state interaction system
+- [x] Add measurement overlay system (distances above/below)
+- [x] Create floating "×" button for selected dividers
+- [x] Implement drag-to-move with live constraints
+- [x] Add smart snapping and positioning feedback
+- [x] Handle state transitions (hover → select → drag → deselect)
+- [x] Preserve existing click-to-add ghost divider functionality
+- [x] **Fix critical drag detection bug** (25+ iteration debugging session!)
+
+**CURRENT STATUS**: Core functionality works, delete button disabled due to refactoring
 
 **Files to modify:**
-- `js/shelf-generator.js` - 3D button creation and positioning
-- Consider new file: `js/3d-ui-elements.js`
+- `js/shelf-generator.js` - Multi-state system, drag handlers, measurements
+- Consider new file: `js/3d-measurements.js` - Measurement overlay system
+- Consider new file: `js/divider-interaction-states.js` - State management
 
 **Success criteria:**
-- "+" button appears near mouse when hovering empty space
-- "×" button appears on hovered existing dividers
-- Buttons are clearly visible from all camera angles
-- Buttons have appropriate hover feedback
+- Hover divider → show measurements (non-intrusive)
+- Click divider → enter selected state with "×" button
+- Drag selected divider → smooth repositioning with live feedback
+- Click "×" → delete divider  
+- Click elsewhere → deselect and return to normal mode
+- All interactions feel smooth and discoverable
+- Measurements are accurate and clearly displayed
+- Drag constraints prevent invalid positions
+- Compatible with existing ghost divider system
+
+**Interaction Flow Examples:**
+```
+Add new divider:
+Empty space → Hover → Ghost appears → Click → Divider added
+
+Reposition existing divider:  
+Existing divider → Hover → Measurements appear → Click → Selected state + "×" button
+→ Drag → Live positioning → Release → Updated position
+
+Delete existing divider:
+Existing divider → Hover → Measurements appear → Click → Selected state + "×" button  
+→ Click "×" → Confirmation → Deleted
+
+Deselect:
+Selected divider → Click elsewhere → Return to normal state
+```
+
+**Technical Implementation Notes:**
+- Extend existing `detectHoveredExistingDivider()` to include measurement calculation
+- Add state management: `NORMAL`, `HOVERING`, `SELECTED`, `DRAGGING`  
+- Create floating UI elements (measurements, "×" button) positioned in 3D space
+- Implement drag constraints: min/max positions based on adjacent dividers
+- Live position updates during drag with visual feedback
+- Preserve all existing ghost divider functionality for adding new dividers
 
 ---
 
@@ -173,25 +236,83 @@ Phase 5 was completed early by integrating click functionality directly into Pha
 
 ---
 
-### Phase 6: Enhanced UX Polish ⏳ NEXT PHASE
-**Goal:** Smooth out the experience with smart behaviors
+### Phase 5: State Management Migration ⏳ NEXT PHASE
+**Goal:** Migrate to XState for robust state management and prevent future bugs
+
+**Why This Phase:**
+- Current vanilla JS state management led to 25+ iteration debugging session
+- Phase 6+ requires even more complex state transitions
+- XState provides compile-time guarantees and visual debugging
+- TypeScript integration will catch state-related bugs immediately
+
+**Migration Strategy:**
+1. **Week 1: Setup & Learning**
+   - Install XState + TypeScript
+   - Convert existing files to `.ts` (incremental typing)
+   - Create basic state machine alongside existing code
+   
+2. **Week 2: Core State Migration**
+   - Replace `interactionState` with XState machine
+   - Migrate: normal → hovering → selected → dragging states
+   - Keep all existing Three.js logic unchanged
+   
+3. **Week 3: Advanced States**
+   - Add delete confirmation states
+   - Implement proper drag preparation → dragging flow
+   - Add visual debugging for state transitions
+   
+4. **Week 4: Cleanup & Testing**
+   - Remove old state management code
+   - Test all interaction flows
+   - Document state machine for future development
+
+**Expected Benefits:**
+- Impossible to get into invalid states
+- Visual debugging of state transitions
+- Type safety for all state-related code
+- Easier implementation of Phases 6-7
+- Better developer experience
 
 **Tasks:**
-- [ ] Add minimum spacing constraints (prevent dividers too close together)
+- [ ] Install XState and TypeScript
+- [ ] Convert js files to ts (incremental)
+- [ ] Create divider interaction state machine
+- [ ] Migrate click handlers to use state machine
+- [ ] Migrate drag detection to use state machine
+- [ ] Add visual state debugging
+- [ ] Remove old state management code
+- [ ] Re-enable delete button with proper state management
+- [ ] Test all interaction flows
+- [ ] Update documentation
+
+---
+
+### Phase 6: Enhanced UX Polish ⏳ AFTER PHASE 5
+**Goal:** Polish the multi-state interaction system and add smart behaviors
+
+**Tasks:**
+- [ ] Polish state transition animations and feedback
+- [ ] Add minimum spacing constraints (prevent dividers too close together)  
 - [ ] Smart positioning (snap to useful increments, avoid tiny spaces)
+- [ ] Enhance measurement display system (typography, positioning, units)
 - [ ] Add undo/redo for 3D operations
 - [ ] Improve mobile/touch support for 3D interactions
-- [ ] Add keyboard shortcuts (ESC to cancel ghost divider)
+- [ ] Add keyboard shortcuts (ESC to deselect, DEL to delete selected)
+- [ ] Polish floating "×" button (hover states, positioning, visibility)
 
 **Files to modify:**
-- `js/shelf-generator.js` - Smart positioning logic
-- `js/main.js` - Undo/redo and keyboard handling
+- `js/shelf-generator.js` - Animation system, smart constraints
+- `js/main.js` - Undo/redo and keyboard handling  
+- `styles.css` - Measurement overlay styling
 
 **Success criteria:**
+- State transitions feel smooth and natural
 - Dividers can't be placed too close to existing ones
 - Position snapping feels natural and helpful
-- Touch devices have alternative interaction method
-- All interactions feel polished and responsive
+- Measurements are clearly readable and well-positioned
+- Touch devices have equivalent functionality
+- All interactions feel polished and professional
+- Keyboard shortcuts enhance power-user workflow
 
 ---
 
