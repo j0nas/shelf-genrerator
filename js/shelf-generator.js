@@ -3,6 +3,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { createDividerService } from '../dist/js/divider-state-machine.js';
 
 export class ShelfGenerator {
+
     constructor() {
         this.scene = null;
         this.camera = null;

@@ -11,7 +11,7 @@
     "declaration": true,
     "outDir": "./dist",
     "rootDir": "./",
-    "lib": ["ES2020", "DOM"]
+    "lib": ["ES2020", "DOM", "ES2015.Iterable", "ES2015.Generator", "ES2015.Collection"]
   },
   "include": [
     "js/**/*"
