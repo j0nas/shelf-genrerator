@@ -25,6 +25,20 @@ export class ShelfGenerator {
         this.mouse = new THREE.Vector2();
         this.currentConfig = null;
         this.debugMode = false; // Set to true for debugging
+        
+        // DISABLE ALL CONSOLE LOGGING except subdivision debug
+        const originalLog = console.log;
+        console.log = function(...args) {
+            const message = args.join(' ');
+            // Allow subdivision ghost debugging
+            if (message.includes('❌ SUBDIVISION GHOST MISSING') || 
+                message.includes('🔍 Section detection for subdivisions:') ||
+                message.includes('👻 Ghost divider status:') ||
+                message.includes('👻 Ghost creation:') ||
+                message.includes('👻 Ghost positioning:')) {
+                originalLog.apply(console, args);
+            }
+        };
         this.debugSphere = null;
         this.ghostDivider = null;
         this.raycastPlane = null; // Persistent raycasting plane
@@ -302,63 +316,93 @@ export class ShelfGenerator {
         const existingDivider = this.detectHoveredExistingDivider();
         
         if (existingDivider) {
-            const selectedDivider = this.getSelectedDivider();
+            // Check if we're actually close to the divider or just intersecting its geometry
+            const result = this.getShelfInteriorIntersection();
+            const isNearDivider = result ? this.isMouseNearExistingDivider(result.position, existingDivider.position) : false;
             
-            if (selectedDivider && existingDivider.dividerId === selectedDivider.dividerId) {
-                // Already selected, no need to change state
+            if (isNearDivider) {
+                // We're actually near the divider, handle it as before
+                const selectedDivider = this.getSelectedDivider();
+                
+                if (selectedDivider && existingDivider.dividerId === selectedDivider.dividerId) {
+                    // Already selected, no need to change state
+                } else {
+                    this.updateHoverState(existingDivider);
+                }
+                
+                // Send event to XState
+                this.stateMachine.send({ 
+                    type: 'HOVER_DIVIDER', 
+                    divider: existingDivider 
+                });
+                
+                // Hide ghost divider when hovering existing divider
+                this.hideGhostDivider();
+                
+                if (this.debugMode) {
+                    console.log('🔍 Hovering existing divider:', existingDivider.dividerId, 'State:', this.getStateValue());
+                    console.log('   This will hide ghost divider and prevent subdivision ghosts!');
+                }
             } else {
-                this.updateHoverState(existingDivider);
-            }
-            
-            // Send event to XState
-            this.stateMachine.send({ 
-                type: 'HOVER_DIVIDER', 
-                divider: existingDivider 
-            });
-            
-            this.hideGhostDivider();
-            
-            if (this.debugMode) {
-                console.log('Hovering existing divider:', existingDivider, 'State:', this.getStateValue());
+                // We're intersecting the divider geometry but not near it, treat as empty space
+                if (this.debugMode) {
+                    console.log('🔍 Intersecting divider geometry but not near it, treating as empty space');
+                }
+                this.handleEmptySpaceHover();
             }
         } else {
-            // Not hovering existing divider
-            const currentState = this.getStateValue();
-            if (this.debugMode) {
-                console.log('Mouse move - XState:', currentState);
-            }
-            if (currentState !== 'selected' && currentState !== 'dragging' && currentState !== 'preparingDrag') {
-                this.clearHoverState();
+            this.handleEmptySpaceHover();
+        }
+    }
+    
+    handleEmptySpaceHover() {
+        // Not hovering existing divider
+        const currentState = this.getStateValue();
+        // Removed verbose mouse move debug
+        if (currentState !== 'selected' && currentState !== 'dragging' && currentState !== 'preparingDrag') {
+            this.clearHoverState();
+            
+            // Send UNHOVER event to XState only if not in interactive states
+            // Removed verbose state debug
+            this.stateMachine.send({ type: 'UNHOVER' });
+            
+            // Check for ghost divider position
+            const result = this.getShelfInteriorIntersection();
+            if (result !== null) {
+                // Removed verbose position debug
                 
-                // Send UNHOVER event to XState only if not in interactive states
+                // Smart section detection and ghost divider
+                const sectionInfo = this.detectHoveredSection(result.position);
+                // ONLY log subdivision ghosts when they should appear but don't
+                const dividerCount = window.app?.currentConfig?.shelfLayout?.length || 0;
+                if (dividerCount > 0 && sectionInfo?.canAdd && (!this.ghostDivider || !this.ghostDivider.visible)) {
+                    console.log(`❌ SUBDIVISION GHOST MISSING: ${dividerCount} dividers, section=${sectionInfo.sectionIndex}, canAdd=true, but ghost not visible`);
+                }
+                this.updateGhostDivider(sectionInfo);
+            } else {
                 if (this.debugMode) {
-                    console.log('Sending UNHOVER because state is:', currentState);
+                    this.hideDebugVisualization();
                 }
-                this.stateMachine.send({ type: 'UNHOVER' });
-                
-                // Check for ghost divider position
-                const result = this.getShelfInteriorIntersection();
-                if (result !== null) {
-                    if (this.debugMode) {
-                        const unit = result.units === 'metric' ? 'cm' : '"';
-                        console.log(`Shelf interior Y position: ${result.position.toFixed(2)}${unit} from bottom`);
-                        this.updateDebugVisualization(result.worldPoint);
-                    }
-                    
-                    // Smart section detection and ghost divider
-                    const sectionInfo = this.detectHoveredSection(result.position);
-                    if (this.debugMode) {
-                        console.log('Section info:', sectionInfo);
-                    }
-                    this.updateGhostDivider(sectionInfo);
-                } else {
-                    if (this.debugMode) {
-                        this.hideDebugVisualization();
-                    }
-                    this.hideGhostDivider();
-                }
+                this.hideGhostDivider();
             }
         }
+    }
+    
+    isMouseNearExistingDivider(mousePosition, dividerPosition) {
+        const app = window.app;
+        if (!app) return false;
+        
+        // Define "near" as within a certain distance of the divider
+        const nearDistance = app.currentConfig.units === 'metric' ? 3 : 1.5; // 3cm or 1.5"
+        
+        const distance = Math.abs(mousePosition - dividerPosition);
+        const isNear = distance <= nearDistance;
+        
+        if (this.debugMode) {
+            console.log(`Mouse at ${mousePosition.toFixed(2)}, divider at ${dividerPosition.toFixed(2)}, distance: ${distance.toFixed(2)}, near: ${isNear}`);
+        }
+        
+        return isNear;
     }
     
     onMouseClick(event) {
@@ -535,36 +579,12 @@ export class ShelfGenerator {
             planeZ + 100 // Point towards positive Z (camera direction)
         );
         
-        if (this.debugMode) {
-            console.log(`=== RAYCASTING PLANE DEBUG ===`);
-            console.log(`interiorWidth: ${interiorWidth.toFixed(2)} (${this.currentConfig.units})`);
-            console.log(`interiorHeight: ${interiorHeight.toFixed(2)} (${this.currentConfig.units})`);
-            console.log(`shelfPos: x=${shelfPosX.toFixed(2)}, y=${shelfPosY.toFixed(2)}, z=${shelfPosZ.toFixed(2)}`);
-            console.log(`planeCenter: x=${planeX.toFixed(2)}, y=${planeY.toFixed(2)}, z=${planeZ.toFixed(2)}`);
-            console.log(`planeBottom: y=${(planeY - interiorHeight/2).toFixed(2)}`);
-            console.log(`planeTop: y=${(planeY + interiorHeight/2).toFixed(2)}`);
-            console.log(`expectedInteriorBottom: y=${(shelfPosY + thickness).toFixed(2)}`);
-            console.log(`expectedInteriorTop: y=${(shelfPosY + thickness + interiorHeight).toFixed(2)}`);
-        }
+        // Removed verbose raycasting debug
         
         // Raycast against this plane - ensure we detect both sides
         const intersects = this.raycaster.intersectObject(intersectionPlane, false);
         
-        if (this.debugMode) {
-            console.log(`=== RAYCAST DEBUG ===`);
-            if (this.raycaster.ray?.origin) {
-                console.log(`Ray origin: x=${this.raycaster.ray.origin.x.toFixed(2)}, y=${this.raycaster.ray.origin.y.toFixed(2)}, z=${this.raycaster.ray.origin.z.toFixed(2)}`);
-            }
-            if (this.raycaster.ray?.direction) {
-                console.log(`Ray direction: x=${this.raycaster.ray.direction.x.toFixed(2)}, y=${this.raycaster.ray.direction.y.toFixed(2)}, z=${this.raycaster.ray.direction.z.toFixed(2)}`);
-            }
-            console.log(`Plane position: x=${intersectionPlane.position.x.toFixed(2)}, y=${intersectionPlane.position.y.toFixed(2)}, z=${intersectionPlane.position.z.toFixed(2)}`);
-            console.log(`Plane normal: x=${intersectionPlane.geometry.attributes.normal?.array[2] || 'N/A'}`);
-            console.log(`Intersections found: ${intersects.length}`);
-            if (intersects.length > 0) {
-                console.log(`Hit point: x=${intersects[0].point.x.toFixed(2)}, y=${intersects[0].point.y.toFixed(2)}, z=${intersects[0].point.z.toFixed(2)}`);
-            }
-        }
+        // Debug logging disabled
         
         // Clean up the temporary plane
         planeGeometry.dispose();
@@ -589,14 +609,7 @@ export class ShelfGenerator {
         // shelfInteriorY is already in the correct app units
         const position = shelfInteriorY;
         
-        if (this.debugMode) {
-            console.log(`=== getShelfInteriorIntersection ===`);
-            console.log(`worldPoint.y: ${worldPoint.y.toFixed(2)} (scene units)`);
-            console.log(`thickness: ${thickness.toFixed(2)} (${units})`);
-            console.log(`interiorHeight: ${interiorHeight.toFixed(2)} (${units})`);
-            console.log(`shelfInteriorY: ${shelfInteriorY.toFixed(2)} (calculated)`);
-            console.log(`position (final): ${position.toFixed(2)} (${units})`);
-        }
+        // Removed verbose intersection debug
         
         // Only return valid positions within shelf bounds (all in app units)
         if (shelfInteriorY >= 0 && shelfInteriorY <= interiorHeight) {
@@ -1127,7 +1140,8 @@ export class ShelfGenerator {
     }
     
     setView(viewType) {
-        const config = this.getCurrentConfig();
+        // Use the scene's coordinate system (inches) instead of raw DOM values
+        const config = this.currentConfig || this.getCurrentConfig();
         const maxDim = Math.max(config.width, config.height, config.depth);
         const distance = maxDim * 1.5;
         
@@ -1170,10 +1184,17 @@ export class ShelfGenerator {
     
     // For future 3D interaction - convert shelf position to 3D world position  
     shelfToWorldPosition(shelfY, config) {
-        const thickness = config.materialThickness;
+        // Scene coordinate system is in app units (same as getShelfInteriorIntersection)
+        const sceneConfig = this.currentConfig || config;
+        const thickness = sceneConfig.materialThickness;
         const baseY = thickness;
         const shelfWorldY = this.shelfGroup?.position?.y || 0;
-        return shelfWorldY + baseY + shelfY;
+        
+        // No unit conversion needed - scene is in app units
+        // Both getShelfInteriorIntersection() and this method work in app units
+        const shelfYInSceneUnits = shelfY;
+        
+        return shelfWorldY + baseY + shelfYInSceneUnits;
     }
     
     // Debug mode methods
@@ -1217,13 +1238,7 @@ export class ShelfGenerator {
         const dividers = [...app.currentConfig.shelfLayout].sort((a, b) => a.position - b.position);
         const minSectionHeight = app.currentConfig.units === 'metric' ? 10 : 4; // 10cm or 4"
         
-        if (this.debugMode) {
-            console.log(`=== detectHoveredSection ===`);
-            console.log(`mouseYPosition: ${mouseYPosition.toFixed(2)} (${app.currentConfig.units})`);
-            console.log(`interiorHeight: ${interiorHeight.toFixed(2)} (${app.currentConfig.units})`);
-            console.log(`dividers: ${dividers.map(d => d.position.toFixed(2)).join(', ')}`);
-            console.log(`minSectionHeight: ${minSectionHeight}`);
-        }
+        // All debug logging disabled
         
         // Empty shelf case
         if (dividers.length === 0) {
@@ -1293,10 +1308,6 @@ export class ShelfGenerator {
         // Since scene is in app units, sectionInfo.centerPosition can be used directly
         const worldY = this.shelfToWorldPosition(sectionInfo.centerPosition, this.currentConfig);
         
-        if (this.debugMode) {
-            console.log(`Ghost divider: center=${sectionInfo.centerPosition.toFixed(2)}, worldY=${worldY.toFixed(2)}`);
-        }
-        
         this.ghostDivider.position.y = worldY;
         this.ghostDivider.visible = true;
     }
@@ -1327,6 +1338,22 @@ export class ShelfGenerator {
     hideGhostDivider() {
         if (this.ghostDivider) {
             this.ghostDivider.visible = false;
+        }
+    }
+    
+    cleanupGhostDivider() {
+        if (this.ghostDivider) {
+            // Remove from scene and dispose properly
+            if (this.ghostDivider.parent) {
+                this.ghostDivider.parent.remove(this.ghostDivider);
+            }
+            if (this.ghostDivider.geometry) {
+                this.ghostDivider.geometry.dispose();
+            }
+            if (this.ghostDivider.material) {
+                this.ghostDivider.material.dispose();
+            }
+            this.ghostDivider = null;
         }
     }
     
@@ -1913,7 +1940,7 @@ export class ShelfGenerator {
         // Clear all interactive elements when shelf is regenerated
         this.hideMeasurements();
         this.hideDeleteButton();
-        this.hideGhostDivider();
+        this.cleanupGhostDivider(); // Properly dispose ghost divider
         
         // Reset only visual state - XState manages interaction state
         this.deleteButtonHovered = false;

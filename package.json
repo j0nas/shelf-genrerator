@@ -10,7 +10,12 @@
     "serve": "serve -l 8765",
     "test": "vitest",
     "test:ui": "vitest --ui",
-    "test:run": "vitest run"
+    "test:run": "vitest run",
+    "test:ghost": "vitest run tests/ghost-divider.test.js",
+    "test:regression": "vitest run tests/subdivision-bug-regression.test.js",
+    "test:coverage": "vitest run --coverage",
+    "test:watch": "vitest --watch",
+    "test:ci": "vitest run --reporter=verbose"
   },
   "keywords": [
     "woodworking",
