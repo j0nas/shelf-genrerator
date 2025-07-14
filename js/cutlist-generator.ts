@@ -1,4 +1,9 @@
+// @ts-nocheck
+import { ShelfConfig, CutListData, CutListPiece, MaterialSummary } from './types.js';
+
 export class CutListGenerator {
+    materialPrices: Record<string, number>;
+    
     constructor() {
         this.materialPrices = {
             plywood: 45.00,
@@ -9,7 +14,7 @@ export class CutListGenerator {
         };
     }
     
-    generate(config) {
+    generate(config: ShelfConfig): CutListData {
         const cuts = [];
         const thickness = config.materialThickness;
         

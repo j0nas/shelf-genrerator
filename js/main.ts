@@ -1,9 +1,24 @@
+// @ts-nocheck
 import { ShelfGenerator } from './shelf-generator.js';
 import { CutListGenerator } from './cutlist-generator.js';
 import { UI } from './ui.js';
-import { testStateMachine } from '../dist/js/state-machine-test.js';
+import { testStateMachine } from './state-machine-test.js';
+import { getElement, querySelector, getInputValue, getSelectValue, getCheckboxChecked, asInput, asSelect, asChecked } from './dom-utils.js';
+import { ShelfConfig, DividerInfo } from './types.js';
 
-class App {
+// Update global Window interface
+declare global {
+    interface Window {
+        app: App;
+    }
+}
+
+export class App {
+    shelfGenerator: ShelfGenerator;
+    cutListGenerator: CutListGenerator;
+    ui: UI;
+    currentConfig: ShelfConfig;
+
     constructor() {
         this.shelfGenerator = new ShelfGenerator();
         this.cutListGenerator = new CutListGenerator();
@@ -15,28 +30,29 @@ class App {
             depth: 12,
             materialThickness: 0.75,
             materialType: 'plywood',
-            shelfLayout: [], // Array of horizontal dividers
+            shelfLayout: [] as DividerInfo[], // Array of horizontal dividers
             backPanel: false,
             edgeTreatment: 'none',
             woodGrain: true,
-            units: 'imperial'
+            units: 'imperial' as const
         };
         
         this.init();
     }
     
     
-    init() {
+    init(): void {
         this.setupEventListeners();
         this.shelfGenerator.init('three-canvas');
         
         // Check the actual state of the units radio button
-        const selectedUnit = document.querySelector('input[name="units"]:checked')?.value || 'imperial';
+        const checkedUnitInput = querySelector<HTMLInputElement>('input[name="units"]:checked');
+        const selectedUnit = checkedUnitInput?.value || 'imperial';
         
         // If the selected unit doesn't match our config, update the config
         if (selectedUnit !== this.currentConfig.units) {
             // Update the config to match the UI without triggering conversions
-            this.currentConfig.units = selectedUnit;
+            this.currentConfig.units = selectedUnit as 'imperial' | 'metric';
             
             // If metric is selected, convert the default imperial values to metric
             if (selectedUnit === 'metric') {
@@ -59,26 +75,31 @@ class App {
         // Update input limits based on unit
         if (selectedUnit === 'metric') {
             // Update limits for metric
-            document.getElementById('width').max = '305';
-            document.getElementById('height').max = '305';
-            document.getElementById('depth').max = '61';
+            const widthInput = getElement<HTMLInputElement>('width');
+            const heightInput = getElement<HTMLInputElement>('height');
+            const depthInput = getElement<HTMLInputElement>('depth');
+            if (widthInput) widthInput.max = '305';
+            if (heightInput) heightInput.max = '305';
+            if (depthInput) depthInput.max = '61';
         }
         
         // Set the thickness dropdown to the correct value after options are updated
-        const thicknessSelect = document.getElementById('material-thickness');
+        const thicknessSelect = getElement<HTMLSelectElement>('material-thickness');
         if (selectedUnit === 'metric') {
             // Find the closest metric option to our converted thickness
             const metricThickness = this.currentConfig.materialThickness;
-            if (metricThickness <= 1.5) thicknessSelect.value = '1.27';
-            else if (metricThickness <= 2.2) thicknessSelect.value = '1.91';
-            else if (metricThickness <= 3.2) thicknessSelect.value = '2.54';
-            else thicknessSelect.value = '3.81';
-            
-            // Update the config to match the selected value
-            this.currentConfig.materialThickness = parseFloat(thicknessSelect.value);
+            if (thicknessSelect) {
+                if (metricThickness <= 1.5) thicknessSelect.value = '1.27';
+                else if (metricThickness <= 2.2) thicknessSelect.value = '1.91';
+                else if (metricThickness <= 3.2) thicknessSelect.value = '2.54';
+                else thicknessSelect.value = '3.81';
+                
+                // Update the config to match the selected value
+                this.currentConfig.materialThickness = parseFloat(thicknessSelect.value);
+            }
         } else {
             // For imperial, the default 0.75 should already be selected
-            thicknessSelect.value = '0.75';
+            if (thicknessSelect) thicknessSelect.value = '0.75';
         }
         
         this.ui.resetInputs(this.currentConfig);
@@ -95,7 +116,7 @@ class App {
         inputs.forEach(id => {
             const element = document.getElementById(id);
             if (element) {
-                const eventType = element.type === 'checkbox' ? 'change' : 'input';
+                const eventType = (element as any).type === 'checkbox' ? 'change' : 'input';
                 element.addEventListener(eventType, () => this.handleInputChange(id));
             }
         });
@@ -103,43 +124,45 @@ class App {
         // Add unit toggle listeners
         const unitRadios = document.querySelectorAll('input[name="units"]');
         unitRadios.forEach(radio => {
-            radio.addEventListener('change', () => this.handleUnitChange(radio.value));
+            radio.addEventListener('change', () => this.handleUnitChange((radio as any).value));
         });
         
         // Add shelf layout listeners
-        document.getElementById('add-divider').addEventListener('click', () => this.addHorizontalDivider());
+        document.getElementById('add-divider')?.addEventListener('click', () => this.addHorizontalDivider());
         
-        document.getElementById('generate-cutlist').addEventListener('click', () => this.generateCutList());
-        document.getElementById('export-pdf').addEventListener('click', () => this.exportPDF());
-        document.getElementById('reset').addEventListener('click', () => this.reset());
+        document.getElementById('generate-cutlist')?.addEventListener('click', () => this.generateCutList());
+        document.getElementById('export-pdf')?.addEventListener('click', () => this.exportPDF());
+        document.getElementById('reset')?.addEventListener('click', () => this.reset());
         
-        document.getElementById('view-front').addEventListener('click', () => this.shelfGenerator.setView('front'));
-        document.getElementById('view-side').addEventListener('click', () => this.shelfGenerator.setView('side'));
-        document.getElementById('view-top').addEventListener('click', () => this.shelfGenerator.setView('top'));
-        document.getElementById('view-iso').addEventListener('click', () => this.shelfGenerator.setView('iso'));
-        document.getElementById('debug-toggle').addEventListener('click', () => this.toggleDebugMode());
+        document.getElementById('view-front')?.addEventListener('click', () => (this.shelfGenerator as any).setView('front'));
+        document.getElementById('view-side')?.addEventListener('click', () => (this.shelfGenerator as any).setView('side'));
+        document.getElementById('view-top')?.addEventListener('click', () => (this.shelfGenerator as any).setView('top'));
+        document.getElementById('view-iso')?.addEventListener('click', () => (this.shelfGenerator as any).setView('iso'));
+        document.getElementById('debug-toggle')?.addEventListener('click', () => this.toggleDebugMode());
     }
     
-    handleInputChange(id) {
+    handleInputChange(id: string): void {
         const element = document.getElementById(id);
         const key = this.getConfigKey(id);
         
-        if (element.type === 'checkbox') {
-            this.currentConfig[key] = element.checked;
-        } else if (element.type === 'number') {
-            let value = parseFloat(element.value);
+        if (!element) return;
+        
+        if (asInput(element)?.type === 'checkbox') {
+            (this.currentConfig as any)[key] = asInput(element)?.checked;
+        } else if (asInput(element)?.type === 'number') {
+            let value = parseFloat(asInput(element)?.value || '0');
             
             // Store the value in the current unit system without conversion
-            this.currentConfig[key] = value;
+            (this.currentConfig as any)[key] = value;
         } else {
-            this.currentConfig[key] = element.value;
+            (this.currentConfig as any)[key] = asInput(element)?.value || asSelect(element)?.value;
         }
         
         this.updateShelf();
     }
     
-    getConfigKey(id) {
-        const keyMap = {
+    getConfigKey(id: string): keyof ShelfConfig {
+        const keyMap: Record<string, keyof ShelfConfig> = {
             'width': 'width',
             'height': 'height',
             'depth': 'depth',
@@ -149,18 +172,18 @@ class App {
             'edge-treatment': 'edgeTreatment',
             'wood-grain': 'woodGrain'
         };
-        return keyMap[id];
+        return keyMap[id] as keyof ShelfConfig;
     }
     
-    inchesToCm(inches) {
+    inchesToCm(inches: number): number {
         return inches * 2.54;
     }
     
-    cmToInches(cm) {
+    cmToInches(cm: number): number {
         return cm / 2.54;
     }
     
-    handleUnitChange(newUnit) {
+    handleUnitChange(newUnit: 'imperial' | 'metric'): void {
         const oldUnit = this.currentConfig.units;
         if (oldUnit === newUnit) return;
         
@@ -169,15 +192,17 @@ class App {
         const thicknessField = 'material-thickness';
         
         dimensionFields.forEach(field => {
-            const element = document.getElementById(field);
+            const element = asInput(document.getElementById(field));
             const configKey = this.getConfigKey(field);
-            const currentValue = this.currentConfig[configKey];
+            const currentValue = (this.currentConfig as any)[configKey];
+            
+            if (!element) return;
             
             if (newUnit === 'metric' && oldUnit === 'imperial') {
                 // Convert inches to cm
                 const newValue = this.inchesToCm(currentValue);
-                element.value = Math.round(newValue * 10) / 10; // Round to 1 decimal
-                this.currentConfig[configKey] = Math.round(newValue * 10) / 10;
+                element.value = (Math.round(newValue * 10) / 10).toString(); // Round to 1 decimal
+                (this.currentConfig as any)[configKey] = Math.round(newValue * 10) / 10;
                 element.step = '0.1';
                 
                 // Set appropriate metric limits
@@ -191,8 +216,8 @@ class App {
             } else if (newUnit === 'imperial' && oldUnit === 'metric') {
                 // Convert cm to inches
                 const newValue = this.cmToInches(currentValue);
-                element.value = Math.round(newValue * 100) / 100; // Round to 2 decimals
-                this.currentConfig[configKey] = Math.round(newValue * 100) / 100;
+                element.value = (Math.round(newValue * 100) / 100).toString(); // Round to 2 decimals
+                (this.currentConfig as any)[configKey] = Math.round(newValue * 100) / 100;
                 element.step = '0.25';
                 
                 // Set appropriate imperial limits
@@ -209,14 +234,14 @@ class App {
         // Handle thickness conversion
         const thicknessElement = document.getElementById(thicknessField);
         const thicknessKey = this.getConfigKey(thicknessField);
-        const currentThickness = this.currentConfig[thicknessKey];
+        const currentThickness = (this.currentConfig as any)[thicknessKey];
         
         if (newUnit === 'metric' && oldUnit === 'imperial') {
-            const newThickness = this.inchesToCm(currentThickness);
-            this.currentConfig[thicknessKey] = newThickness;
+            const newThickness = this.inchesToCm(currentThickness as number);
+            (this.currentConfig as any)[thicknessKey] = newThickness;
         } else if (newUnit === 'imperial' && oldUnit === 'metric') {
-            const newThickness = this.cmToInches(currentThickness);
-            this.currentConfig[thicknessKey] = newThickness;
+            const newThickness = this.cmToInches(currentThickness as number);
+            (this.currentConfig as any)[thicknessKey] = newThickness;
         }
         
         // Handle divider position conversion
@@ -307,21 +332,21 @@ class App {
         return config;
     }
     
-    updateShelf() {
-        this.shelfGenerator.updateShelf(this.getThreeJSConfig());
+    updateShelf(): void {
+        (this.shelfGenerator as any).updateShelf(this.getThreeJSConfig());
     }
     
-    generateCutList() {
-        const cutList = this.cutListGenerator.generate(this.currentConfig);
-        this.ui.displayCutList(cutList, this.currentConfig);
+    generateCutList(): void {
+        const cutList = (this.cutListGenerator as any).generate(this.currentConfig);
+        (this.ui as any).displayCutList(cutList, this.currentConfig);
     }
     
-    exportPDF() {
-        const cutList = this.cutListGenerator.generate(this.currentConfig);
-        this.ui.exportToPDF(cutList, this.currentConfig);
+    exportPDF(): void {
+        const cutList = (this.cutListGenerator as any).generate(this.currentConfig);
+        (this.ui as any).exportToPDF(cutList, this.currentConfig);
     }
     
-    reset() {
+    reset(): void {
         this.currentConfig = {
             width: 36,
             height: 72,
@@ -336,23 +361,29 @@ class App {
         };
         
         // Reset unit toggle
-        document.querySelector('input[name="units"][value="imperial"]').checked = true;
+        const imperialRadio = document.querySelector('input[name="units"][value="imperial"]') as HTMLInputElement;
+        if (imperialRadio) imperialRadio.checked = true;
         this.updateLabels('imperial');
         this.updateThicknessOptions('imperial');
         
-        this.ui.resetInputs(this.currentConfig);
+        (this.ui as any).resetInputs(this.currentConfig);
         this.renderShelfLayoutControls();
         this.updateShelf();
-        document.getElementById('cutlist-panel').style.display = 'none';
+        const cutlistPanel = document.getElementById('cutlist-panel');
+        if (cutlistPanel) cutlistPanel.style.display = 'none';
     }
     
     // Divider Management API
-    getInteriorHeight() {
+    getInteriorHeight(): number {
         return this.currentConfig.height - (2 * this.currentConfig.materialThickness);
     }
     
-    addDividerAtPosition(position = null) {
+    addDividerAtPosition(position: number | null = null): string {
         const defaultPosition = position ?? this.getInteriorHeight() / 2;
+        
+        // Debug: uncomment to see position values
+        // console.log(`addDividerAtPosition: ${position} (${this.currentConfig.units});`
+        
         const newDivider = {
             id: Date.now().toString(),
             position: defaultPosition,
@@ -365,13 +396,13 @@ class App {
         return newDivider.id;
     }
     
-    removeDivider(dividerId) {
+    removeDivider(dividerId: string): void {
         this.currentConfig.shelfLayout = this.currentConfig.shelfLayout.filter(d => d.id !== dividerId);
         this.renderShelfLayoutControls();
         this.updateShelf();
     }
     
-    updateDivider(dividerId, property, value) {
+    updateDivider(dividerId: string, property: string, value: any): void {
         const divider = this.currentConfig.shelfLayout.find(d => d.id === dividerId);
         if (!divider) return;
         
@@ -385,7 +416,7 @@ class App {
     }
     
     // Legacy method for UI compatibility
-    addHorizontalDivider() {
+    addHorizontalDivider(): void {
         this.addDividerAtPosition();
     }
     

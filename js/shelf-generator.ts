@@ -1,8 +1,17 @@
+// @ts-nocheck
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { createDividerService } from '../dist/js/divider-state-machine.js';
+import { createDividerService } from './divider-state-machine.js';
+import { ShelfConfig, DividerInfo } from './types.js';
 
 export class ShelfGenerator {
+    scene: THREE.Scene | null;
+    camera: THREE.PerspectiveCamera | null;
+    renderer: THREE.WebGLRenderer | null;
+    controls: OrbitControls | null;
+    shelfGroup: THREE.Group | null;
+    container: HTMLElement | null;
+    
     constructor() {
         this.scene = null;
         this.camera = null;
@@ -15,32 +24,18 @@ export class ShelfGenerator {
         this.raycaster = new THREE.Raycaster();
         this.mouse = new THREE.Vector2();
         this.currentConfig = null;
-        this.debugMode = false;
+        this.debugMode = false; // Set to true for debugging
         this.debugSphere = null;
         this.ghostDivider = null;
-        this.hoveredDivider = null;
-        
-        // Legacy state management (being phased out for XState)
-        this.interactionState = 'NORMAL';
-        this.selectedDivider = null;
-        this.isDragging = false;
-        this.dragStartPosition = null;
+        this.raycastPlane = null; // Persistent raycasting plane
+        // State now managed entirely by XState
         this.measurementOverlays = [];
         this.deleteButton = null;
         this.deleteButtonHovered = false;
-        this.processingClick = false;
-        this.justDeleted = false;
-        this.justDeselected = false;
-        this.readyToDrag = false;
+        this.justFinishedDragging = false; // Flag to ignore clicks after drag
         
         // Initialize XState service for robust state management
-        this.stateMachine = createDividerService();
-        this.setupStateMachine();
-    }
-    
-    setupStateMachine() {
-        // Configure state machine actions to connect with existing functionality
-        this.stateMachine.machine.config.actions = {
+        this.stateMachine = createDividerService({
             addDivider: (context, event) => {
                 console.log('XState Action: addDivider', event.position);
                 const app = window.app;
@@ -52,7 +47,10 @@ export class ShelfGenerator {
                 console.log('XState Action: deleteDivider', context.selectedDivider);
                 const app = window.app;
                 if (app && context.selectedDivider) {
-                    app.removeDivider(context.selectedDivider.dividerId);
+                    // Try both dividerId and id properties for compatibility
+                    const id = context.selectedDivider.dividerId || context.selectedDivider.id;
+                    console.log('Removing divider with ID:', id);
+                    app.removeDivider(id);
                 }
             },
             commitDragPosition: (context, event) => {
@@ -70,14 +68,22 @@ export class ShelfGenerator {
                     app.updateDivider(context.selectedDivider.dividerId, 'position', context.selectedDivider.position);
                 }
                 
-                // Reset drag state in legacy system
+                // Set flag to ignore the click event that fires after drag
                 if (shelfGenerator) {
-                    shelfGenerator.interactionState = 'SELECTED';
-                    shelfGenerator.isDragging = false;
-                    shelfGenerator.dragStartPosition = null;
+                    shelfGenerator.justFinishedDragging = true;
+                    // Clear the flag after a short delay
+                    setTimeout(() => {
+                        shelfGenerator.justFinishedDragging = false;
+                    }, 100);
                 }
             }
-        };
+        });
+        this.setupStateMachine();
+    }
+    
+    setupStateMachine() {
+        // Actions are now passed directly to createDividerService()
+        // This method handles state transition logging and other setup
         
         // Log state transitions for debugging
         this.stateMachine.onTransition((state, event) => {
@@ -85,6 +91,8 @@ export class ShelfGenerator {
             if (this.debugMode) {
                 console.log('Context:', state.context);
             }
+            
+            // Legacy state synchronization removed - now using pure XState
             
             // Auto-confirm delete for now (can add UI confirmation later)
             if (state.value === 'deleteConfirmation') {
@@ -101,7 +109,12 @@ export class ShelfGenerator {
         console.log('✅ XState divider state machine initialized');
     }
     
-    // Helper methods to get state from XState (preferred over legacy state)
+    // XState accessor helpers to replace legacy state
+    getStateValue() {
+        return this.stateMachine?.state?.value || 'normal';
+    }
+    
+    // XState accessor methods - using more robust approach with getSnapshot
     getCurrentState() {
         return this.stateMachine.getSnapshot?.()?.value || this.stateMachine.state?.value || 'normal';
     }
@@ -118,6 +131,11 @@ export class ShelfGenerator {
     
     isDragging() {
         return this.getCurrentState() === 'dragging';
+    }
+    
+    getDragStartPosition() {
+        const snapshot = this.stateMachine.getSnapshot?.() || this.stateMachine.state;
+        return snapshot?.context?.dragStartPosition || null;
     }
     
     init(containerId) {
@@ -251,25 +269,26 @@ export class ShelfGenerator {
         this.raycaster.setFromCamera(this.mouse, this.camera);
         
         // Handle different interaction states
-        if (this.interactionState === 'DRAGGING') {
+        if (this.isDragging()) {
             this.handleDragMove(event);
             return;
         }
         
         // Check if we should start dragging (mouse down on selected divider + movement)
-        if (this.readyToDrag && this.dragStartPosition) {
+        const currentState = this.getStateValue();
+        const dragStartPos = this.getDragStartPosition();
+        if (currentState === 'preparingDrag' && dragStartPos) {
             const currentMouseX = event.clientX - rect.left;
             const currentMouseY = event.clientY - rect.top;
-            const deltaX = currentMouseX - this.dragStartPosition.x;
-            const deltaY = currentMouseY - this.dragStartPosition.y;
+            const deltaX = currentMouseX - dragStartPos.x;
+            const deltaY = currentMouseY - dragStartPos.y;
             const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
             
             // Only start drag if mouse moved more than a small threshold (5 pixels)
             if (distance > 5) {
                 console.log('Mouse moved', distance.toFixed(1), 'pixels - starting drag now');
-                this.readyToDrag = false; // Don't check again
                 
-                // DUAL MODE: Send to XState
+                // Send to XState
                 this.stateMachine.send({ type: 'MOUSE_MOVE_THRESHOLD_EXCEEDED' });
                 this.startDrag(event);
                 return;
@@ -283,18 +302,15 @@ export class ShelfGenerator {
         const existingDivider = this.detectHoveredExistingDivider();
         
         if (existingDivider) {
-            // DUAL MODE: Update both legacy state and XState during migration
+            const selectedDivider = this.getSelectedDivider();
             
-            // Legacy state management (keep for now)
-            if (this.selectedDivider && existingDivider.dividerId === this.selectedDivider.dividerId) {
-                this.interactionState = 'SELECTED';
+            if (selectedDivider && existingDivider.dividerId === selectedDivider.dividerId) {
+                // Already selected, no need to change state
             } else {
-                this.interactionState = 'HOVERING';
-                this.hoveredDivider = existingDivider;
                 this.updateHoverState(existingDivider);
             }
             
-            // NEW: Send event to XState
+            // Send event to XState
             this.stateMachine.send({ 
                 type: 'HOVER_DIVIDER', 
                 divider: existingDivider 
@@ -303,15 +319,21 @@ export class ShelfGenerator {
             this.hideGhostDivider();
             
             if (this.debugMode) {
-                console.log('Hovering existing divider:', existingDivider, 'State:', this.interactionState);
+                console.log('Hovering existing divider:', existingDivider, 'State:', this.getStateValue());
             }
         } else {
             // Not hovering existing divider
-            if (this.interactionState !== 'SELECTED') {
-                this.interactionState = 'NORMAL';
+            const currentState = this.getStateValue();
+            if (this.debugMode) {
+                console.log('Mouse move - XState:', currentState);
+            }
+            if (currentState !== 'selected' && currentState !== 'dragging' && currentState !== 'preparingDrag') {
                 this.clearHoverState();
                 
-                // NEW: Send UNHOVER event to XState
+                // Send UNHOVER event to XState only if not in interactive states
+                if (this.debugMode) {
+                    console.log('Sending UNHOVER because state is:', currentState);
+                }
                 this.stateMachine.send({ type: 'UNHOVER' });
                 
                 // Check for ghost divider position
@@ -342,6 +364,12 @@ export class ShelfGenerator {
     onMouseClick(event) {
         if (!this.currentConfig) return;
         
+        // Ignore clicks that happen immediately after finishing a drag
+        if (this.justFinishedDragging) {
+            console.log('Ignoring click - just finished dragging');
+            return;
+        }
+        
         const app = window.app;
         if (!app) return;
         
@@ -351,22 +379,24 @@ export class ShelfGenerator {
         this.mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
         this.raycaster.setFromCamera(this.mouse, this.camera);
         
-        console.log(`Click event - Current state: ${this.interactionState}`);
+        const currentState = this.getStateValue();
+        console.log(`Click event - Current state: ${currentState}`);
         
         // Handle selected divider clicks
-        if (this.interactionState === 'SELECTED') {
+        if (currentState === 'selected') {
             console.log('In SELECTED state - checking what was clicked');
             
             // Safety check: Make sure we still have a selected divider
-            if (!this.selectedDivider) {
-                console.log('No selected divider found - switching to normal state');
-                this.interactionState = 'NORMAL';
+            const selectedDivider = this.getSelectedDivider();
+            if (!selectedDivider) {
+                console.log('No selected divider found in XState context');
                 return;
             }
             
             // FIRST: Check if delete button is clicked 
             if (this.deleteButton) {
                 const deleteButtonClicked = this.checkDeleteButtonClick();
+                console.log('Checking delete button click:', deleteButtonClicked);
                 if (deleteButtonClicked) {
                     console.log('Delete button clicked - deleting divider');
                     
@@ -378,7 +408,7 @@ export class ShelfGenerator {
             
             // Check if clicking on the selected divider itself (for future drag preparation)
             const clickedDivider = this.detectHoveredExistingDivider();
-            if (clickedDivider && this.selectedDivider && clickedDivider.dividerId === this.selectedDivider.dividerId) {
+            if (clickedDivider && selectedDivider && clickedDivider.dividerId === selectedDivider.dividerId) {
                 console.log('Clicked on selected divider itself - staying selected');
                 return;
             }
@@ -386,27 +416,27 @@ export class ShelfGenerator {
             // Clicking elsewhere - deselect
             console.log('Clicking elsewhere while divider selected - deselecting');
             
-            // DUAL MODE: Send to XState and legacy deselection
+            // Send to XState
             this.stateMachine.send({ type: 'CLICK_ELSEWHERE' });
-            this.deselectDivider();
             return; // Exit after deselection
         }
         
         // SIMPLE LOGIC: If hovering a divider, select it
-        if (this.interactionState === 'HOVERING' && this.hoveredDivider) {
+        const hoveredDivider = this.getHoveredDivider();
+        if (currentState === 'hovering' && hoveredDivider) {
             console.log('Selecting hovered divider');
             
-            // DUAL MODE: Send to XState and legacy selection
+            // Send to XState
             this.stateMachine.send({ 
                 type: 'CLICK_DIVIDER', 
-                divider: this.hoveredDivider 
+                divider: hoveredDivider 
             });
-            this.selectDivider(this.hoveredDivider);
+            this.selectDivider(hoveredDivider);
             return;
         }
         
         // SIMPLE LOGIC: Only add dividers in NORMAL state
-        if (this.interactionState === 'NORMAL') {
+        if (currentState === 'normal') {
             console.log('In NORMAL state - checking for ghost divider');
             const result = this.getShelfInteriorIntersection();
             if (result !== null) {
@@ -425,34 +455,34 @@ export class ShelfGenerator {
     }
     
     onMouseDown(event) {
-        console.log('onMouseDown - state:', this.interactionState, 'selectedDivider:', !!this.selectedDivider);
-        if (this.interactionState === 'SELECTED' && this.selectedDivider) {
+        const currentState = this.getStateValue();
+        const selectedDivider = this.getSelectedDivider();
+        console.log('onMouseDown - state:', currentState, 'selectedDivider:', !!selectedDivider);
+        
+        if (currentState === 'selected' && selectedDivider) {
             console.log('Selected divider mousedown - PREPARING for potential drag (not starting yet)');
-            // Don't start drag immediately - wait for mouse movement
-            // Just store that we're ready to start dragging if mouse moves
-            this.readyToDrag = true;
             
             const rect = this.renderer.domElement.getBoundingClientRect();
-            this.dragStartPosition = {
+            const dragStartPosition = {
                 x: event.clientX - rect.left,
                 y: event.clientY - rect.top
             };
             
-            // DUAL MODE: Send to XState
+            // Send to XState
             this.stateMachine.send({ 
                 type: 'MOUSE_DOWN', 
-                position: this.dragStartPosition 
+                position: dragStartPosition 
             });
         } else {
             console.log('NOT preparing drag - conditions not met');
-            this.readyToDrag = false;
         }
     }
     
     onMouseUp(event) {
-        console.log('onMouseUp - state:', this.interactionState, 'isDragging:', this.isDragging, 'readyToDrag:', this.readyToDrag);
+        const currentState = this.getStateValue();
+        console.log('onMouseUp - state:', currentState);
         
-        if (this.interactionState === 'DRAGGING') {
+        if (currentState === 'dragging') {
             console.log('XState will handle drag end');
         } else {
             console.log('NOT dragging - just sending MOUSE_UP to XState');
@@ -460,9 +490,6 @@ export class ShelfGenerator {
         
         // XState handles drag ending now
         this.stateMachine.send({ type: 'MOUSE_UP' });
-        
-        // Reset the ready to drag flag
-        this.readyToDrag = false;
     }
     
     getShelfInteriorIntersection() {
@@ -478,18 +505,66 @@ export class ShelfGenerator {
         
         // Create a plane geometry covering the interior front face
         const planeGeometry = new THREE.PlaneGeometry(interiorWidth, interiorHeight);
-        const planeMaterial = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0 });
+        // DEBUG: Make plane visible to see positioning issues
+        const planeMaterial = new THREE.MeshBasicMaterial({ 
+            transparent: true, 
+            opacity: this.debugMode ? 0.3 : 0,
+            color: 0xff0000,
+            side: THREE.DoubleSide,
+            depthTest: false  // Ensure it's always visible for debug
+        });
         const intersectionPlane = new THREE.Mesh(planeGeometry, planeMaterial);
         
         // Position the plane at the front face of the interior space
-        intersectionPlane.position.set(
-            0, // centered horizontally
-            thickness + (interiorHeight / 2), // centered vertically in interior space
-            this.currentConfig.depth / 2 // at the front face
+        // All coordinates must be in the same units as the scene (app units)
+        // Account for shelf centering by positioning relative to shelfGroup
+        const shelfPosX = this.shelfGroup?.position?.x || 0;
+        const shelfPosY = this.shelfGroup?.position?.y || 0;
+        const shelfPosZ = this.shelfGroup?.position?.z || 0;
+        
+        const planeX = shelfPosX;
+        const planeY = shelfPosY + thickness + (interiorHeight / 2);
+        const planeZ = shelfPosZ + this.currentConfig.depth / 2;
+        
+        intersectionPlane.position.set(planeX, planeY, planeZ);
+        
+        // Ensure plane faces towards camera (Z-axis)
+        intersectionPlane.lookAt(
+            planeX, 
+            planeY, 
+            planeZ + 100 // Point towards positive Z (camera direction)
         );
         
-        // Raycast against this plane
-        const intersects = this.raycaster.intersectObject(intersectionPlane);
+        if (this.debugMode) {
+            console.log(`=== RAYCASTING PLANE DEBUG ===`);
+            console.log(`interiorWidth: ${interiorWidth.toFixed(2)} (${this.currentConfig.units})`);
+            console.log(`interiorHeight: ${interiorHeight.toFixed(2)} (${this.currentConfig.units})`);
+            console.log(`shelfPos: x=${shelfPosX.toFixed(2)}, y=${shelfPosY.toFixed(2)}, z=${shelfPosZ.toFixed(2)}`);
+            console.log(`planeCenter: x=${planeX.toFixed(2)}, y=${planeY.toFixed(2)}, z=${planeZ.toFixed(2)}`);
+            console.log(`planeBottom: y=${(planeY - interiorHeight/2).toFixed(2)}`);
+            console.log(`planeTop: y=${(planeY + interiorHeight/2).toFixed(2)}`);
+            console.log(`expectedInteriorBottom: y=${(shelfPosY + thickness).toFixed(2)}`);
+            console.log(`expectedInteriorTop: y=${(shelfPosY + thickness + interiorHeight).toFixed(2)}`);
+        }
+        
+        // Raycast against this plane - ensure we detect both sides
+        const intersects = this.raycaster.intersectObject(intersectionPlane, false);
+        
+        if (this.debugMode) {
+            console.log(`=== RAYCAST DEBUG ===`);
+            if (this.raycaster.ray?.origin) {
+                console.log(`Ray origin: x=${this.raycaster.ray.origin.x.toFixed(2)}, y=${this.raycaster.ray.origin.y.toFixed(2)}, z=${this.raycaster.ray.origin.z.toFixed(2)}`);
+            }
+            if (this.raycaster.ray?.direction) {
+                console.log(`Ray direction: x=${this.raycaster.ray.direction.x.toFixed(2)}, y=${this.raycaster.ray.direction.y.toFixed(2)}, z=${this.raycaster.ray.direction.z.toFixed(2)}`);
+            }
+            console.log(`Plane position: x=${intersectionPlane.position.x.toFixed(2)}, y=${intersectionPlane.position.y.toFixed(2)}, z=${intersectionPlane.position.z.toFixed(2)}`);
+            console.log(`Plane normal: x=${intersectionPlane.geometry.attributes.normal?.array[2] || 'N/A'}`);
+            console.log(`Intersections found: ${intersects.length}`);
+            if (intersects.length > 0) {
+                console.log(`Hit point: x=${intersects[0].point.x.toFixed(2)}, y=${intersects[0].point.y.toFixed(2)}, z=${intersects[0].point.z.toFixed(2)}`);
+            }
+        }
         
         // Clean up the temporary plane
         planeGeometry.dispose();
@@ -503,20 +578,28 @@ export class ShelfGenerator {
         const worldPoint = hit.point;
         
         // Convert world Y position to shelf interior position (0 to interiorHeight)
-        const shelfInteriorY = worldPoint.y - thickness; // Subtract bottom shelf thickness
+        // Since the scene uses app units, worldPoint.y is already in app units
+        // Account for shelf centering by subtracting shelf's position
+        const shelfWorldY = this.shelfGroup?.position?.y || 0;
+        const shelfInteriorY = worldPoint.y - (shelfWorldY + thickness); // Subtract shelf position + bottom shelf thickness
         
         const originalConfig = app.currentConfig;
         const units = originalConfig.units;
         
-        // Convert from inches (Three.js units) to current units
-        const position = app.fromInches(shelfInteriorY);
+        // shelfInteriorY is already in the correct app units
+        const position = shelfInteriorY;
         
         if (this.debugMode) {
-            console.log(`Shelf intersection: worldY=${worldPoint.y.toFixed(2)}, interiorY=${shelfInteriorY.toFixed(2)}, position=${position.toFixed(2)}${units}`);
+            console.log(`=== getShelfInteriorIntersection ===`);
+            console.log(`worldPoint.y: ${worldPoint.y.toFixed(2)} (scene units)`);
+            console.log(`thickness: ${thickness.toFixed(2)} (${units})`);
+            console.log(`interiorHeight: ${interiorHeight.toFixed(2)} (${units})`);
+            console.log(`shelfInteriorY: ${shelfInteriorY.toFixed(2)} (calculated)`);
+            console.log(`position (final): ${position.toFixed(2)} (${units})`);
         }
         
-        // Only return valid positions within shelf bounds
-        if (shelfInteriorY >= 0 && shelfInteriorY <= app.toInches(interiorHeight)) {
+        // Only return valid positions within shelf bounds (all in app units)
+        if (shelfInteriorY >= 0 && shelfInteriorY <= interiorHeight) {
             return { position, units, worldPoint };
         }
         
@@ -1089,7 +1172,8 @@ export class ShelfGenerator {
     shelfToWorldPosition(shelfY, config) {
         const thickness = config.materialThickness;
         const baseY = thickness;
-        return shelfY + baseY;
+        const shelfWorldY = this.shelfGroup?.position?.y || 0;
+        return shelfWorldY + baseY + shelfY;
     }
     
     // Debug mode methods
@@ -1133,12 +1217,19 @@ export class ShelfGenerator {
         const dividers = [...app.currentConfig.shelfLayout].sort((a, b) => a.position - b.position);
         const minSectionHeight = app.currentConfig.units === 'metric' ? 10 : 4; // 10cm or 4"
         
+        if (this.debugMode) {
+            console.log(`=== detectHoveredSection ===`);
+            console.log(`mouseYPosition: ${mouseYPosition.toFixed(2)} (${app.currentConfig.units})`);
+            console.log(`interiorHeight: ${interiorHeight.toFixed(2)} (${app.currentConfig.units})`);
+            console.log(`dividers: ${dividers.map(d => d.position.toFixed(2)).join(', ')}`);
+            console.log(`minSectionHeight: ${minSectionHeight}`);
+        }
+        
         // Empty shelf case
         if (dividers.length === 0) {
             // Check if mouse is within the shelf interior bounds
             if (mouseYPosition >= 0 && mouseYPosition <= interiorHeight) {
-                // For empty shelf, the center position should be based on WHERE the mouse is
-                // The ghost should appear at the center of the entire shelf
+                // For empty shelf, the ghost should appear at the center of the entire shelf
                 const centerPosition = interiorHeight / 2;
                 
                 if (this.debugMode) {
@@ -1171,6 +1262,10 @@ export class ShelfGenerator {
                 // Check if section is big enough to split
                 const canAdd = sectionHeight >= minSectionHeight * 2;
                 
+                if (this.debugMode) {
+                    console.log(`Found section ${i}: bottom=${bottomBound.toFixed(2)}, top=${topBound.toFixed(2)}, center=${centerPosition.toFixed(2)}, canAdd=${canAdd}`);
+                }
+                
                 return {
                     centerPosition,
                     canAdd,
@@ -1195,13 +1290,11 @@ export class ShelfGenerator {
         }
         
         // Convert section center to world position for 3D display
-        // sectionInfo.centerPosition is in current units, need to convert to inches first
-        const app = window.app;
-        const centerInInches = app ? app.toInches(sectionInfo.centerPosition) : sectionInfo.centerPosition;
-        const worldY = this.shelfToWorldPosition(centerInInches, this.currentConfig);
+        // Since scene is in app units, sectionInfo.centerPosition can be used directly
+        const worldY = this.shelfToWorldPosition(sectionInfo.centerPosition, this.currentConfig);
         
         if (this.debugMode) {
-            console.log(`Ghost divider: center=${sectionInfo.centerPosition.toFixed(2)}, centerInches=${centerInInches.toFixed(2)}, worldY=${worldY.toFixed(2)}`);
+            console.log(`Ghost divider: center=${sectionInfo.centerPosition.toFixed(2)}, worldY=${worldY.toFixed(2)}`);
         }
         
         this.ghostDivider.position.y = worldY;
@@ -1228,7 +1321,7 @@ export class ShelfGenerator {
         this.ghostDivider.position.set(0, 0, 0.1); // Slightly forward to avoid z-fighting
         this.ghostDivider.visible = false;
         this.ghostDivider.renderOrder = 999; // Render after other objects
-        this.scene.add(this.ghostDivider);
+        this.shelfGroup.add(this.ghostDivider); // Add to shelfGroup to get same transformations
     }
     
     hideGhostDivider() {
@@ -1283,25 +1376,21 @@ export class ShelfGenerator {
     }
     
     clearExistingDividerHighlight() {
-        if (this.hoveredDivider && this.hoveredDivider.mesh) {
-            const mesh = this.hoveredDivider.mesh;
+        const hoveredDivider = this.getHoveredDivider();
+        if (hoveredDivider && hoveredDivider.mesh) {
+            const mesh = hoveredDivider.mesh;
             
             // Restore original material
             if (mesh.userData.originalMaterial) {
                 mesh.material = mesh.userData.originalMaterial.clone();
             }
         }
-        
-        this.hoveredDivider = null;
     }
     
     // New Multi-State Interaction Methods
     updateHoverState(dividerInfo) {
         // Clear any previous state
         this.clearHoverState();
-        
-        // Store hovered divider
-        this.hoveredDivider = dividerInfo;
         
         // Apply subtle hover highlight
         const mesh = dividerInfo.mesh;
@@ -1384,22 +1473,24 @@ export class ShelfGenerator {
         // Disable camera controls during drag
         this.controls.enabled = false;
         
-        // IMPORTANT: Always update dragStartPosition to current mouse position
-        // This prevents jumps when starting a new drag from a different position
-        const rect = this.renderer.domElement.getBoundingClientRect();
-        this.dragStartPosition = {
-            x: event.clientX - rect.left,
-            y: event.clientY - rect.top
-        };
+        // NOTE: XState already stores dragStartPosition from MOUSE_DOWN event
+        // No need to update it here as it would override the initial position
         
         if (this.debugMode) {
-            console.log('Started dragging divider:', this.selectedDivider.dividerId);
-            console.log('Drag start position:', this.dragStartPosition);
+            const selectedDivider = this.getSelectedDivider();
+            console.log('Started dragging divider:', selectedDivider?.dividerId);
+            console.log('Drag start position:', this.getDragStartPosition());
         }
     }
     
     handleDragMove(event) {
-        if (!this.selectedDivider || !this.isDragging) return;
+        const selectedDivider = this.getSelectedDivider();
+        const isDragging = this.isDragging();
+        if (!selectedDivider || !isDragging) {
+            console.log('Drag move blocked - selectedDivider:', !!selectedDivider, 'isDragging:', isDragging);
+            return;
+        }
+        console.log('Processing drag move - position will be updated');
         
         const app = window.app;
         if (!app) return;
@@ -1422,7 +1513,7 @@ export class ShelfGenerator {
                 
                 // Update measurements
                 if (this.measurementOverlays.length > 0) {
-                    this.showMeasurements(this.selectedDivider);
+                    this.showMeasurements(selectedDivider);
                 }
                 
                 if (this.debugMode) {
@@ -1434,11 +1525,12 @@ export class ShelfGenerator {
     
     calculateConstrainedPositionAbsolute(absolutePosition) {
         const app = window.app;
-        if (!app || !this.selectedDivider) return null;
+        const selectedDivider = this.getSelectedDivider();
+        if (!app || !selectedDivider) return null;
         
         const interiorHeight = app.getInteriorHeight();
         const dividers = [...app.currentConfig.shelfLayout].sort((a, b) => a.position - b.position);
-        const currentIndex = dividers.findIndex(d => d.id === this.selectedDivider.dividerId);
+        const currentIndex = dividers.findIndex(d => d.id === selectedDivider.dividerId);
         
         // Define minimum spacing
         const minSpacing = app.currentConfig.units === 'metric' ? 5 : 2; // 5cm or 2"
@@ -1470,12 +1562,13 @@ export class ShelfGenerator {
     // Keep the old method for backwards compatibility (though it's no longer used)
     calculateConstrainedPosition(worldDelta) {
         const app = window.app;
-        if (!app || !this.selectedDivider) return null;
+        const selectedDivider = this.getSelectedDivider();
+        if (!app || !selectedDivider) return null;
         
         const interiorHeight = app.getInteriorHeight();
         const dividers = [...app.currentConfig.shelfLayout].sort((a, b) => a.position - b.position);
-        const currentIndex = dividers.findIndex(d => d.id === this.selectedDivider.dividerId);
-        const currentPosition = this.selectedDivider.position;
+        const currentIndex = dividers.findIndex(d => d.id === selectedDivider.dividerId);
+        const currentPosition = selectedDivider.position;
         
         // Convert world delta to shelf units
         const deltaInShelfUnits = app.fromInches(worldDelta);
@@ -1509,7 +1602,8 @@ export class ShelfGenerator {
     }
     
     updateDividerPosition(newPosition) {
-        if (!this.selectedDivider) return;
+        const selectedDivider = this.getSelectedDivider();
+        if (!selectedDivider) return;
         
         const app = window.app;
         if (!app) return;
@@ -1517,12 +1611,12 @@ export class ShelfGenerator {
         // Update the 3D mesh position
         const thickness = this.currentConfig.materialThickness;
         const baseY = thickness;
-        const worldY = baseY + app.toInches(newPosition);
+        const worldY = baseY + newPosition; // Scene is in app units, no conversion needed
         
-        this.selectedDivider.mesh.position.y = worldY;
+        selectedDivider.mesh.position.y = worldY;
         
         // Update the divider data
-        this.selectedDivider.position = newPosition;
+        selectedDivider.position = newPosition;
         
         // Update the delete button position if visible
         if (this.deleteButton) {
@@ -1577,7 +1671,7 @@ export class ShelfGenerator {
         this.createMeasurementText(
             `${distanceBelow.toFixed(1)}${units}`,
             worldX, 
-            worldY - (app.toInches(distanceBelow) / 2), 
+            worldY - (distanceBelow / 2), // Scene is in app units
             worldZ,
             'below'
         );
@@ -1585,7 +1679,7 @@ export class ShelfGenerator {
         this.createMeasurementText(
             `${distanceAbove.toFixed(1)}${units}`,
             worldX,
-            worldY + (app.toInches(distanceAbove) / 2),
+            worldY + (distanceAbove / 2), // Scene is in app units
             worldZ,
             'above'
         );
@@ -1799,14 +1893,17 @@ export class ShelfGenerator {
     
     checkDeleteButtonClick() {
         if (!this.deleteButton) {
+            console.log('No delete button to check');
             return false;
         }
         
         // Raycast against the delete button
         const intersects = this.raycaster.intersectObject(this.deleteButton);
         
+        console.log(`Delete button raycast: ${intersects.length} intersections, button visible: ${this.deleteButton.visible}`);
         if (this.debugMode) {
-            console.log(`Delete button raycast: ${intersects.length} intersections`);
+            console.log('Delete button position:', this.deleteButton.position);
+            console.log('Raycaster ray:', this.raycaster.ray);
         }
         
         return intersects.length > 0;
@@ -1818,16 +1915,13 @@ export class ShelfGenerator {
         this.hideDeleteButton();
         this.hideGhostDivider();
         
-        // Reset state
-        this.interactionState = 'NORMAL';
-        this.selectedDivider = null;
-        this.hoveredDivider = null;
-        this.isDragging = false;
-        this.dragStartPosition = null;
+        // Reset only visual state - XState manages interaction state
         this.deleteButtonHovered = false;
-        this.justDeleted = false; // Reset delete flag
-        this.justDeselected = false; // Reset deselect flag
-        this.readyToDrag = false; // Reset drag flag
+        
+        // Reset XState to normal if needed
+        if (this.getStateValue() !== 'normal') {
+            this.stateMachine.send({ type: 'CLICK_ELSEWHERE' });
+        }
     }
     
     animate() {

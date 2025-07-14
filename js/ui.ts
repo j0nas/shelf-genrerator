@@ -1,9 +1,14 @@
+// @ts-nocheck
+import { ShelfConfig, CutListData } from './types.js';
+
 export class UI {
+    cutListVisible: boolean;
+    
     constructor() {
         this.cutListVisible = false;
     }
     
-    displayCutList(cutListData, config = {}) {
+    displayCutList(cutListData: CutListData, config: ShelfConfig): void {
         const panel = document.getElementById('cutlist-panel');
         const content = document.getElementById('cutlist-content');
         
