@@ -14,6 +14,8 @@ type DividerEvent =
   | { type: 'CLICK_DIVIDER'; divider: any }
   | { type: 'CLICK_ELSEWHERE' }
   | { type: 'CLICK_DELETE_BUTTON' }
+  | { type: 'CONFIRM_DELETE' }
+  | { type: 'CANCEL_DELETE' }
   | { type: 'MOUSE_DOWN'; position: { x: number; y: number } }
   | { type: 'MOUSE_MOVE_THRESHOLD_EXCEEDED' }
   | { type: 'MOUSE_UP' }
@@ -75,13 +77,7 @@ export const dividerMachine = createMachine<DividerContext, DividerEvent>({
           })
         },
         CLICK_DELETE_BUTTON: {
-          target: 'normal',
-          actions: [
-            'deleteDivider', // Action to be implemented
-            assign({
-              selectedDivider: null
-            })
-          ]
+          target: 'deleteConfirmation'
         },
         MOUSE_DOWN: {
           target: 'preparingDrag',
@@ -111,6 +107,28 @@ export const dividerMachine = createMachine<DividerContext, DividerEvent>({
               dragStartPosition: null
             })
           ]
+        }
+      }
+    },
+    deleteConfirmation: {
+      on: {
+        CONFIRM_DELETE: {
+          target: 'normal',
+          actions: [
+            'deleteDivider',
+            assign({
+              selectedDivider: null
+            })
+          ]
+        },
+        CANCEL_DELETE: {
+          target: 'selected'
+        },
+        CLICK_ELSEWHERE: {
+          target: 'normal',
+          actions: assign({
+            selectedDivider: null
+          })
         }
       }
     }

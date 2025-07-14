@@ -43,18 +43,39 @@ export class ShelfGenerator {
         this.stateMachine.machine.config.actions = {
             addDivider: (context, event) => {
                 console.log('XState Action: addDivider', event.position);
-                // Note: This action fires but the legacy code already handles the actual addition
-                // In future iterations, we'll move the logic here
+                const app = window.app;
+                if (app && event.position) {
+                    app.addDividerAtPosition(event.position);
+                }
             },
             deleteDivider: (context, event) => {
                 console.log('XState Action: deleteDivider', context.selectedDivider);
-                // Note: This action fires but the legacy code already handles the actual deletion
-                // In future iterations, we'll move the logic here
+                const app = window.app;
+                if (app && context.selectedDivider) {
+                    app.removeDivider(context.selectedDivider.dividerId);
+                }
             },
             commitDragPosition: (context, event) => {
                 console.log('XState Action: commitDragPosition', context.selectedDivider);
-                // This will be implemented when we migrate drag logic
-                // For now, the legacy endDrag method handles this
+                
+                // Re-enable camera controls
+                const shelfGenerator = window.shelfGenerator;
+                if (shelfGenerator) {
+                    shelfGenerator.controls.enabled = true;
+                }
+                
+                // Commit the position change to the app state
+                const app = window.app;
+                if (app && context.selectedDivider) {
+                    app.updateDivider(context.selectedDivider.dividerId, 'position', context.selectedDivider.position);
+                }
+                
+                // Reset drag state in legacy system
+                if (shelfGenerator) {
+                    shelfGenerator.interactionState = 'SELECTED';
+                    shelfGenerator.isDragging = false;
+                    shelfGenerator.dragStartPosition = null;
+                }
             }
         };
         
@@ -63,6 +84,14 @@ export class ShelfGenerator {
             console.log(`🎯 XState: ${state.value} <- ${event.type}`);
             if (this.debugMode) {
                 console.log('Context:', state.context);
+            }
+            
+            // Auto-confirm delete for now (can add UI confirmation later)
+            if (state.value === 'deleteConfirmation') {
+                console.log('Auto-confirming delete...');
+                setTimeout(() => {
+                    this.stateMachine.send({ type: 'CONFIRM_DELETE' });
+                }, 100); // Small delay to let user see the transition
             }
         });
         
@@ -78,6 +107,9 @@ export class ShelfGenerator {
             console.error('Container element not found:', containerId);
             return;
         }
+        
+        // Make this instance globally accessible for XState actions
+        window.shelfGenerator = this;
         
         this.setupScene();
         this.setupCamera();
@@ -319,9 +351,8 @@ export class ShelfGenerator {
                 if (deleteButtonClicked) {
                     console.log('Delete button clicked - deleting divider');
                     
-                    // DUAL MODE: Send to XState and legacy removal
+                    // XState handles the deletion now
                     this.stateMachine.send({ type: 'CLICK_DELETE_BUTTON' });
-                    app.removeDivider(this.selectedDivider.dividerId);
                     return; // Exit immediately after deletion
                 }
             }
@@ -364,12 +395,11 @@ export class ShelfGenerator {
                 if (sectionInfo && sectionInfo.canAdd) {
                     console.log(`Adding divider at position: ${sectionInfo.centerPosition.toFixed(2)}`);
                     
-                    // DUAL MODE: Send to XState and legacy addition
+                    // XState handles the addition now
                     this.stateMachine.send({ 
                         type: 'CLICK_EMPTY_SPACE', 
                         position: sectionInfo.centerPosition 
                     });
-                    app.addDividerAtPosition(sectionInfo.centerPosition);
                 }
             }
         }
@@ -404,13 +434,12 @@ export class ShelfGenerator {
         console.log('onMouseUp - state:', this.interactionState, 'isDragging:', this.isDragging, 'readyToDrag:', this.readyToDrag);
         
         if (this.interactionState === 'DRAGGING') {
-            console.log('Calling endDrag from onMouseUp');
-            this.endDrag(event);
+            console.log('XState will handle drag end');
         } else {
-            console.log('NOT calling endDrag - state is not DRAGGING');
+            console.log('NOT dragging - just sending MOUSE_UP to XState');
         }
         
-        // DUAL MODE: Send to XState
+        // XState handles drag ending now
         this.stateMachine.send({ type: 'MOUSE_UP' });
         
         // Reset the ready to drag flag
