@@ -3,7 +3,6 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { createDividerService } from '../dist/js/divider-state-machine.js';
 
 export class ShelfGenerator {
-
     constructor() {
         this.scene = null;
         this.camera = null;
@@ -21,8 +20,8 @@ export class ShelfGenerator {
         this.ghostDivider = null;
         this.hoveredDivider = null;
         
-        // Multi-state interaction system (LEGACY - being migrated to XState)
-        this.interactionState = 'NORMAL'; // NORMAL, HOVERING, SELECTED, DRAGGING
+        // Legacy state management (being phased out for XState)
+        this.interactionState = 'NORMAL';
         this.selectedDivider = null;
         this.isDragging = false;
         this.dragStartPosition = null;
@@ -30,11 +29,11 @@ export class ShelfGenerator {
         this.deleteButton = null;
         this.deleteButtonHovered = false;
         this.processingClick = false;
-        this.justDeleted = false; // Flag to prevent same-click processing after delete
-        this.justDeselected = false; // Flag to prevent same-click processing after deselect
-        this.readyToDrag = false; // Flag to indicate mouse is down on selected divider
+        this.justDeleted = false;
+        this.justDeselected = false;
+        this.readyToDrag = false;
         
-        // NEW: XState service for robust state management
+        // Initialize XState service for robust state management
         this.stateMachine = createDividerService();
         this.setupStateMachine();
     }
@@ -104,15 +103,17 @@ export class ShelfGenerator {
     
     // Helper methods to get state from XState (preferred over legacy state)
     getCurrentState() {
-        return this.stateMachine.state?.value || 'normal';
+        return this.stateMachine.getSnapshot?.()?.value || this.stateMachine.state?.value || 'normal';
     }
     
     getSelectedDivider() {
-        return this.stateMachine.state?.context?.selectedDivider || null;
+        const snapshot = this.stateMachine.getSnapshot?.() || this.stateMachine.state;
+        return snapshot?.context?.selectedDivider || null;
     }
     
     getHoveredDivider() {
-        return this.stateMachine.state?.context?.hoveredDivider || null;
+        const snapshot = this.stateMachine.getSnapshot?.() || this.stateMachine.state;
+        return snapshot?.context?.hoveredDivider || null;
     }
     
     isDragging() {
