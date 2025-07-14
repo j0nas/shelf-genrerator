@@ -17,6 +17,7 @@ export class ShelfGenerator {
         this.debugMode = false;
         this.debugSphere = null;
         this.ghostDivider = null;
+        this.hoveredDivider = null;
     }
     
     init(containerId) {
@@ -112,45 +113,69 @@ export class ShelfGenerator {
         // Update raycaster
         this.raycaster.setFromCamera(this.mouse, this.camera);
         
-        // Check intersection with shelf interior space
-        const result = this.getShelfInteriorIntersection();
-        if (result !== null) {
-            if (this.debugMode) {
-                const unit = result.units === 'metric' ? 'cm' : '"';
-                console.log(`Shelf interior Y position: ${result.position.toFixed(2)}${unit} from bottom`);
-                this.updateDebugVisualization(result.worldPoint);
-            }
-            
-            // Smart section detection and ghost divider
-            const sectionInfo = this.detectHoveredSection(result.position);
-            if (this.debugMode) {
-                console.log('Section info:', sectionInfo);
-            }
-            this.updateGhostDivider(sectionInfo);
-        } else {
-            if (this.debugMode) {
-                this.hideDebugVisualization();
-            }
+        // First check if we're hovering over existing divider geometry
+        const existingDivider = this.detectHoveredExistingDivider();
+        
+        if (existingDivider) {
+            // Hovering over existing divider - show highlight, hide ghost
+            this.updateExistingDividerHighlight(existingDivider);
             this.hideGhostDivider();
+            
+            if (this.debugMode) {
+                console.log('Hovering existing divider:', existingDivider);
+            }
+        } else {
+            // Not hovering existing divider - check for ghost divider position
+            this.clearExistingDividerHighlight();
+            
+            const result = this.getShelfInteriorIntersection();
+            if (result !== null) {
+                if (this.debugMode) {
+                    const unit = result.units === 'metric' ? 'cm' : '"';
+                    console.log(`Shelf interior Y position: ${result.position.toFixed(2)}${unit} from bottom`);
+                    this.updateDebugVisualization(result.worldPoint);
+                }
+                
+                // Smart section detection and ghost divider
+                const sectionInfo = this.detectHoveredSection(result.position);
+                if (this.debugMode) {
+                    console.log('Section info:', sectionInfo);
+                }
+                this.updateGhostDivider(sectionInfo);
+            } else {
+                if (this.debugMode) {
+                    this.hideDebugVisualization();
+                }
+                this.hideGhostDivider();
+            }
         }
     }
     
     onMouseClick(event) {
         if (!this.currentConfig) return;
         
-        // Check if we have a valid ghost divider position
+        const app = window.app;
+        if (!app) return;
+        
+        // Check if we're clicking on an existing divider to remove it
+        if (this.hoveredDivider) {
+            if (this.debugMode) {
+                console.log(`Removing divider: ${this.hoveredDivider.dividerId}`);
+            }
+            app.removeDivider(this.hoveredDivider.dividerId);
+            return;
+        }
+        
+        // Otherwise, check if we have a valid ghost divider position to add
         const result = this.getShelfInteriorIntersection();
         if (result !== null) {
             const sectionInfo = this.detectHoveredSection(result.position);
             if (sectionInfo && sectionInfo.canAdd) {
                 // Add divider at the ghost position
-                const app = window.app;
-                if (app) {
-                    if (this.debugMode) {
-                        console.log(`Adding divider at position: ${sectionInfo.centerPosition.toFixed(2)}`);
-                    }
-                    app.addDividerAtPosition(sectionInfo.centerPosition);
+                if (this.debugMode) {
+                    console.log(`Adding divider at position: ${sectionInfo.centerPosition.toFixed(2)}`);
                 }
+                app.addDividerAtPosition(sectionInfo.centerPosition);
             }
         }
     }
@@ -491,6 +516,14 @@ export class ShelfGenerator {
             horizontalDivider.position.set(0, dividerY, 0);
             horizontalDivider.castShadow = true;
             horizontalDivider.receiveShadow = true;
+            
+            // Add metadata for hover detection
+            horizontalDivider.userData = {
+                type: 'horizontal-divider',
+                dividerId: dividerConfig.id,
+                position: dividerConfig.position
+            };
+            
             dividers.push(horizontalDivider);
             
             // Create vertical dividers based on new control scheme:
@@ -914,6 +947,64 @@ export class ShelfGenerator {
         if (this.ghostDivider) {
             this.ghostDivider.visible = false;
         }
+    }
+    
+    // Existing Divider Hover Detection
+    detectHoveredExistingDivider() {
+        // Raycast against all shelf objects to find horizontal dividers
+        const intersects = this.raycaster.intersectObjects(this.shelfGroup.children, true);
+        
+        for (const intersect of intersects) {
+            const object = intersect.object;
+            if (object.userData && object.userData.type === 'horizontal-divider') {
+                return {
+                    mesh: object,
+                    dividerId: object.userData.dividerId,
+                    position: object.userData.position,
+                    intersection: intersect
+                };
+            }
+        }
+        
+        return null;
+    }
+    
+    updateExistingDividerHighlight(dividerInfo) {
+        // Clear any previous highlight
+        this.clearExistingDividerHighlight();
+        
+        // Store reference to highlighted divider
+        this.hoveredDivider = dividerInfo;
+        
+        // Create highlight effect by modifying material
+        const mesh = dividerInfo.mesh;
+        if (mesh.material) {
+            // Store original material if not already stored
+            if (!mesh.userData.originalMaterial) {
+                mesh.userData.originalMaterial = mesh.material.clone();
+            }
+            
+            // Apply highlight material
+            mesh.material = new THREE.MeshBasicMaterial({
+                color: 0xff4444, // Red highlight for removal indication
+                transparent: true,
+                opacity: 0.8,
+                side: THREE.DoubleSide
+            });
+        }
+    }
+    
+    clearExistingDividerHighlight() {
+        if (this.hoveredDivider && this.hoveredDivider.mesh) {
+            const mesh = this.hoveredDivider.mesh;
+            
+            // Restore original material
+            if (mesh.userData.originalMaterial) {
+                mesh.material = mesh.userData.originalMaterial.clone();
+            }
+        }
+        
+        this.hoveredDivider = null;
     }
     
     animate() {
