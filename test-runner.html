@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Divider State Machine Tests</title>
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            margin: 20px; 
+            background: #f5f5f5;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 { 
+            color: #8B4513; 
+            border-bottom: 2px solid #8B4513;
+            padding-bottom: 10px;
+        }
+        button { 
+            background: #28a745;
+            color: white;
+            border: none;
+            padding: 12px 24px; 
+            font-size: 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 10px 5px;
+        }
+        button:hover { 
+            background: #218838; 
+        }
+        button:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+        }
+        .log { 
+            background: #f8f9fa; 
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            padding: 15px; 
+            margin: 20px 0; 
+            height: 400px; 
+            overflow-y: scroll; 
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            line-height: 1.4;
+        }
+        .success { color: #28a745; font-weight: bold; }
+        .error { color: #dc3545; font-weight: bold; }
+        .info { color: #007bff; }
+        .test { color: #6f42c1; }
+        .stats {
+            background: #e9ecef;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .stats span {
+            font-weight: bold;
+        }
+        .instructions {
+            background: #d1ecf1;
+            border: 1px solid #bee5eb;
+            border-radius: 4px;
+            padding: 15px;
+            margin: 20px 0;
+        }
+        .instructions h3 {
+            margin-top: 0;
+            color: #0c5460;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧪 Divider State Machine Test Suite</h1>
+        
+        <div class="instructions">
+            <h3>About These Tests</h3>
+            <p>This test suite verifies the XState divider state machine that powers the shelf generator. Since the 3D UI is a pure function of the state machine state, <strong>if these tests pass, the UI is guaranteed to work correctly</strong>.</p>
+            
+            <p><strong>What's being tested:</strong></p>
+            <ul>
+                <li>State transitions (normal → hovering → selected → dragging)</li>
+                <li>Divider addition (horizontal and vertical)</li>
+                <li>Ghost divider calculations</li>
+                <li>Drag and drop positioning</li>
+                <li>Constraint handling and collision detection</li>
+                <li>Deletion and selection</li>
+                <li>Edge cases and error handling</li>
+            </ul>
+        </div>
+        
+        <div class="stats">
+            <span>Status: <span id="status">Ready to run tests</span></span>
+            <span>Tests: <span id="test-count">0</span> | Passed: <span id="passed-count">0</span> | Failed: <span id="failed-count">0</span></span>
+        </div>
+        
+        <button id="run-tests" onclick="runTests()">▶️ Run All Tests</button>
+        <button id="clear-log" onclick="clearLog()">🧹 Clear Log</button>
+        <button id="run-single" onclick="runSingleTest()">🔍 Run Single Test</button>
+        
+        <div id="log" class="log"></div>
+    </div>
+    
+    <script type="module">
+        import { runDividerStateMachineTests } from './dist/js/divider-state-machine.test.js';
+        
+        const log = document.getElementById('log');
+        const statusEl = document.getElementById('status');
+        const testCountEl = document.getElementById('test-count');
+        const passedCountEl = document.getElementById('passed-count');
+        const failedCountEl = document.getElementById('failed-count');
+        const runButton = document.getElementById('run-tests');
+        
+        let testStats = {
+            total: 0,
+            passed: 0,
+            failed: 0
+        };
+        
+        // Override console.log to capture test output
+        const originalLog = console.log;
+        const originalError = console.error;
+        
+        console.log = function(...args) {
+            originalLog.apply(console, args);
+            const message = args.join(' ');
+            logToUI(message, getLogClass(message));
+        };
+        
+        console.error = function(...args) {
+            originalError.apply(console, args);
+            const message = args.join(' ');
+            logToUI(message, 'error');
+        };
+        
+        function getLogClass(message) {
+            if (message.includes('✅')) return 'success';
+            if (message.includes('❌')) return 'error';
+            if (message.includes('🔍')) return 'test';
+            if (message.includes('🧪')) return 'info';
+            return '';
+        }
+        
+        function logToUI(message, className = '') {
+            const div = document.createElement('div');
+            div.textContent = message;
+            if (className) div.className = className;
+            log.appendChild(div);
+            log.scrollTop = log.scrollHeight;
+            
+            // Update stats
+            if (message.includes('✅') && message.includes('test passed')) {
+                testStats.passed++;
+            } else if (message.includes('❌')) {
+                testStats.failed++;
+            }
+            
+            updateStats();
+        }
+        
+        function updateStats() {
+            testCountEl.textContent = testStats.passed + testStats.failed;
+            passedCountEl.textContent = testStats.passed;
+            failedCountEl.textContent = testStats.failed;
+        }
+        
+        window.runTests = async function() {
+            runButton.disabled = true;
+            runButton.textContent = '⏳ Running Tests...';
+            statusEl.textContent = 'Running tests...';
+            statusEl.className = 'info';
+            
+            // Reset stats
+            testStats = { total: 0, passed: 0, failed: 0 };
+            updateStats();
+            
+            logToUI('🚀 Starting test execution...', 'info');
+            logToUI('', ''); // Empty line
+            
+            try {
+                const startTime = Date.now();
+                const result = runDividerStateMachineTests();
+                const endTime = Date.now();
+                const duration = endTime - startTime;
+                
+                logToUI('', ''); // Empty line
+                
+                if (result) {
+                    logToUI(`🎉 All tests completed successfully in ${duration}ms!`, 'success');
+                    statusEl.textContent = 'All tests passed!';
+                    statusEl.className = 'success';
+                } else {
+                    logToUI(`💥 Tests failed after ${duration}ms`, 'error');
+                    statusEl.textContent = 'Tests failed';
+                    statusEl.className = 'error';
+                }
+                
+            } catch (error) {
+                logToUI(`💥 Test execution error: ${error.message}`, 'error');
+                statusEl.textContent = 'Test execution error';
+                statusEl.className = 'error';
+            }
+            
+            runButton.disabled = false;
+            runButton.textContent = '▶️ Run All Tests';
+        };
+        
+        window.clearLog = function() {
+            log.innerHTML = '';
+            testStats = { total: 0, passed: 0, failed: 0 };
+            updateStats();
+            statusEl.textContent = 'Log cleared';
+            statusEl.className = '';
+        };
+        
+        window.runSingleTest = function() {
+            const testName = prompt('Enter test function name (e.g., testInitialState):');
+            if (testName) {
+                logToUI(`🔍 Running single test: ${testName}`, 'info');
+                // This would require exposing individual test functions
+                logToUI('💡 Single test execution not implemented yet. Use "Run All Tests" instead.', 'info');
+            }
+        };
+        
+        // Auto-run tests on page load
+        logToUI('✨ Test runner loaded. Ready to run tests!', 'info');
+        logToUI('💡 Click "Run All Tests" to verify the state machine works correctly.', 'info');
+    </script>
+</body>
+</html>
