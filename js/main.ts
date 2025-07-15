@@ -31,6 +31,7 @@ export class App {
             materialThickness: 0.75,
             materialType: 'plywood',
             shelfLayout: [] as DividerInfo[], // Array of horizontal dividers
+            verticalDividers: [] as import('./types.js').VerticalDividerInfo[], // Array of vertical dividers
             backPanel: false,
             edgeTreatment: 'none',
             woodGrain: true,
@@ -354,6 +355,7 @@ export class App {
             materialThickness: 0.75,
             materialType: 'plywood',
             shelfLayout: [], // Array of horizontal dividers
+            verticalDividers: [], // Array of vertical dividers
             backPanel: false,
             edgeTreatment: 'none',
             woodGrain: true,
@@ -386,8 +388,7 @@ export class App {
         
         const newDivider = {
             id: Date.now().toString(),
-            position: defaultPosition,
-            spaces: { above: { verticalDividers: 0 }, below: { verticalDividers: 0 } }
+            position: defaultPosition
         };
         
         this.currentConfig.shelfLayout.push(newDivider);
@@ -408,13 +409,52 @@ export class App {
         
         if (property === 'position') {
             divider.position = parseFloat(value);
-        } else if (property.startsWith('spaces.')) {
-            const [, spaceType, spaceProperty] = property.split('.');
-            divider.spaces[spaceType][spaceProperty] = parseInt(value);
         }
+        // Note: spaces system has been replaced by individual vertical dividers
         this.updateShelf();
     }
     
+    // Add vertical divider at specific position (like horizontal dividers)
+    addVerticalDividerAtPosition(position: number | null = null): string {
+        const interiorWidth = this.currentConfig.width - (2 * this.currentConfig.materialThickness);
+        const defaultPosition = position ?? 0; // Default to center
+        
+        const newVerticalDivider = {
+            id: Date.now().toString(),
+            position: defaultPosition
+        };
+        
+        console.log('🔧 Adding vertical divider:', newVerticalDivider);
+        console.log('🔧 Current vertical dividers before:', this.currentConfig.verticalDividers.length);
+        
+        this.currentConfig.verticalDividers.push(newVerticalDivider);
+        
+        console.log('🔧 Current vertical dividers after:', this.currentConfig.verticalDividers.length);
+        console.log('🔧 All vertical dividers:', this.currentConfig.verticalDividers);
+        
+        this.renderShelfLayoutControls();
+        this.updateShelf();
+        return newVerticalDivider.id;
+    }
+
+    // Remove vertical divider (like horizontal dividers)
+    removeVerticalDivider(dividerId: string): void {
+        this.currentConfig.verticalDividers = this.currentConfig.verticalDividers.filter(d => d.id !== dividerId);
+        this.renderShelfLayoutControls();
+        this.updateShelf();
+    }
+
+    // Update vertical divider position (like horizontal dividers)
+    updateVerticalDivider(dividerId: string, property: string, value: any): void {
+        const divider = this.currentConfig.verticalDividers.find(d => d.id === dividerId);
+        if (!divider) return;
+        
+        if (property === 'position') {
+            divider.position = parseFloat(value);
+        }
+        this.updateShelf();
+    }
+
     // Legacy method for UI compatibility
     addHorizontalDivider(): void {
         this.addDividerAtPosition();
@@ -513,85 +553,15 @@ export class App {
             dividerEl.appendChild(header);
             dividerEl.appendChild(positionGroup);
             
-            // Add space controls after position group
-            if (this.shouldShowSpaceControls(index, 'above')) {
-                const aboveGroup = this.createSpaceControls(divider, 'above', 'Space Above Divider');
-                dividerEl.appendChild(aboveGroup);
-            }
-            
-            if (this.shouldShowSpaceControls(index, 'below')) {
-                const belowGroup = this.createSpaceControls(divider, 'below', 'Space Below Divider');
-                dividerEl.appendChild(belowGroup);
-            }
+            // Note: Old space controls removed - vertical dividers now work independently
             
             container.appendChild(dividerEl);
         });
     }
     
-    createSpaceControls(divider, spaceType, labelText) {
-        const spaceGroup = document.createElement('div');
-        spaceGroup.className = 'space-control-group';
-        
-        const spaceHeader = document.createElement('h6');
-        spaceHeader.textContent = labelText;
-        spaceHeader.className = 'space-header';
-        
-        // Add color indicator for this space
-        const colorIndicator = document.createElement('div');
-        colorIndicator.className = 'compartment-color-indicator';
-        colorIndicator.style.backgroundColor = this.getCompartmentColorCSS(`${divider.id}-${spaceType}`);
-        
-        const headerRow = document.createElement('div');
-        headerRow.className = 'space-header-row';
-        headerRow.appendChild(colorIndicator);
-        headerRow.appendChild(spaceHeader);
-        
-        const controlsRow = document.createElement('div');
-        controlsRow.className = 'space-controls-row';
-        
-        // Vertical dividers control for this space
-        const verticalGroup = document.createElement('div');
-        verticalGroup.className = 'input-group';
-        
-        const verticalLabel = document.createElement('label');
-        verticalLabel.textContent = 'Vertical Dividers:';
-        
-        const verticalSelect = document.createElement('select');
-        for (let i = 0; i <= 4; i++) {
-            const option = document.createElement('option');
-            option.value = i;
-            option.textContent = i;
-            if (divider.spaces[spaceType].verticalDividers === i) {
-                option.selected = true;
-            }
-            verticalSelect.appendChild(option);
-        }
-        
-        verticalSelect.value = divider.spaces[spaceType].verticalDividers;
-        
-        verticalSelect.addEventListener('change', (e) => {
-            this.updateDivider(divider.id, `spaces.${spaceType}.verticalDividers`, parseInt(e.target.value));
-        });
-        
-        verticalGroup.appendChild(verticalLabel);
-        verticalGroup.appendChild(verticalSelect);
-        controlsRow.appendChild(verticalGroup);
-        
-        spaceGroup.appendChild(headerRow);
-        spaceGroup.appendChild(controlsRow);
-        
-        return spaceGroup;
-    }
+    // Note: createSpaceControls method removed - vertical dividers now work independently
 
-    shouldShowSpaceControls(dividerIndex, spaceType) {
-        // Only the first (lowest) divider controls both above and below
-        // All other dividers only control the space above them
-        if (dividerIndex === 0) {
-            return true; // First divider controls both above and below
-        } else {
-            return spaceType === 'above'; // Other dividers only control above
-        }
-    }
+    // Note: shouldShowSpaceControls method removed - vertical dividers now work independently
 }
 
 // Make app instance globally available for onclick handlers

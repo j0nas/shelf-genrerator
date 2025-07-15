@@ -41,6 +41,7 @@ export class ShelfGenerator {
         };
         this.debugSphere = null;
         this.ghostDivider = null;
+        this.verticalGhostDivider = null;
         this.raycastPlane = null; // Persistent raycasting plane
         // State now managed entirely by XState
         this.measurementOverlays = [];
@@ -51,10 +52,20 @@ export class ShelfGenerator {
         // Initialize XState service for robust state management
         this.stateMachine = createDividerService({
             addDivider: (context, event) => {
-                console.log('XState Action: addDivider', event.position);
                 const app = window.app;
-                if (app && event.position) {
-                    app.addDividerAtPosition(event.position);
+                if (!app) return;
+                
+                if (event.dividerType === 'vertical') {
+                    console.log('XState Action: addVerticalDivider', event.positionX);
+                    if (event.positionX !== undefined) {
+                        app.addVerticalDividerAtPosition(event.positionX);
+                    }
+                } else {
+                    // Default to horizontal divider (existing behavior)
+                    console.log('XState Action: addHorizontalDivider', event.position);
+                    if (event.position) {
+                        app.addDividerAtPosition(event.position);
+                    }
                 }
             },
             deleteDivider: (context, event) => {
@@ -79,7 +90,14 @@ export class ShelfGenerator {
                 // Commit the position change to the app state
                 const app = window.app;
                 if (app && context.selectedDivider) {
-                    app.updateDivider(context.selectedDivider.dividerId, 'position', context.selectedDivider.position);
+                    if (context.selectedDivider.type === 'vertical') {
+                        // For vertical dividers, save the individual position
+                        console.log('Vertical divider drag complete - saving position:', context.selectedDivider.positionX);
+                        app.updateVerticalDivider(context.selectedDivider.dividerId, 'position', context.selectedDivider.positionX);
+                    } else {
+                        // For horizontal dividers, update the actual position
+                        app.updateDivider(context.selectedDivider.dividerId, 'position', context.selectedDivider.position);
+                    }
                 }
                 
                 // Set flag to ignore the click event that fires after drag
@@ -318,7 +336,7 @@ export class ShelfGenerator {
         if (existingDivider) {
             // Check if we're actually close to the divider or just intersecting its geometry
             const result = this.getShelfInteriorIntersection();
-            const isNearDivider = result ? this.isMouseNearExistingDivider(result.position, existingDivider.position) : false;
+            const isNearDivider = result ? this.isMouseNearExistingDivider(result, existingDivider) : false;
             
             if (isNearDivider) {
                 // We're actually near the divider, handle it as before
@@ -336,8 +354,9 @@ export class ShelfGenerator {
                     divider: existingDivider 
                 });
                 
-                // Hide ghost divider when hovering existing divider
+                // Hide ghost dividers when hovering existing divider
                 this.hideGhostDivider();
+                this.hideVerticalGhostDivider();
                 
                 if (this.debugMode) {
                     console.log('🔍 Hovering existing divider:', existingDivider.dividerId, 'State:', this.getStateValue());
@@ -371,38 +390,97 @@ export class ShelfGenerator {
             if (result !== null) {
                 // Removed verbose position debug
                 
-                // Smart section detection and ghost divider
-                const sectionInfo = this.detectHoveredSection(result.position);
-                // ONLY log subdivision ghosts when they should appear but don't
-                const dividerCount = window.app?.currentConfig?.shelfLayout?.length || 0;
-                if (dividerCount > 0 && sectionInfo?.canAdd && (!this.ghostDivider || !this.ghostDivider.visible)) {
-                    console.log(`❌ SUBDIVISION GHOST MISSING: ${dividerCount} dividers, section=${sectionInfo.sectionIndex}, canAdd=true, but ghost not visible`);
+                // Smart section detection for both horizontal and vertical dividers
+                const horizontalSectionInfo = this.detectHoveredSection(result.position);
+                const verticalSectionInfo = this.detectHoveredVerticalSection(result.positionX, result.positionY);
+                
+                // Intelligent prioritization based on mouse position
+                // Show vertical dividers when mouse is near the edges (left 30% or right 30% of shelf width)
+                const interiorWidth = this.currentConfig.width - (2 * this.currentConfig.materialThickness);
+                const normalizedX = result.positionX / (interiorWidth / 2); // -1 to 1
+                const nearLeftEdge = normalizedX < -0.4;
+                const nearRightEdge = normalizedX > 0.4;
+                const preferVertical = nearLeftEdge || nearRightEdge;
+                
+                if (preferVertical && verticalSectionInfo && verticalSectionInfo.canAdd) {
+                    // Show vertical ghost divider when near edges
+                    this.hideGhostDivider();
+                    this.updateVerticalGhostDivider(verticalSectionInfo);
+                    
+                    if (this.debugMode) {
+                        console.log(`🔲 Vertical ghost at X=${verticalSectionInfo.centerPositionX.toFixed(2)}, controlling divider: ${verticalSectionInfo.controllingDivider?.id || 'none'}, space: ${verticalSectionInfo.spaceType || 'none'}`);
+                    }
+                } else if (horizontalSectionInfo && horizontalSectionInfo.canAdd) {
+                    // Show horizontal ghost divider (default behavior)
+                    this.updateGhostDivider(horizontalSectionInfo);
+                    this.hideVerticalGhostDivider();
+                    
+                    // Debug logging for subdivision ghosts
+                    const dividerCount = window.app?.currentConfig?.shelfLayout?.length || 0;
+                    if (dividerCount > 0 && !this.ghostDivider?.visible) {
+                        console.log(`❌ SUBDIVISION GHOST MISSING: ${dividerCount} dividers, section=${horizontalSectionInfo.sectionIndex}, canAdd=true, but ghost not visible`);
+                    }
+                } else if (verticalSectionInfo && verticalSectionInfo.canAdd) {
+                    // Fallback to vertical if horizontal can't be added
+                    this.hideGhostDivider();
+                    this.updateVerticalGhostDivider(verticalSectionInfo);
+                    
+                    if (this.debugMode) {
+                        console.log(`🔲 Vertical ghost fallback at X=${verticalSectionInfo.centerPositionX.toFixed(2)}`);
+                    }
+                } else {
+                    // No valid ghost positions
+                    this.hideGhostDivider();
+                    this.hideVerticalGhostDivider();
                 }
-                this.updateGhostDivider(sectionInfo);
             } else {
                 if (this.debugMode) {
                     this.hideDebugVisualization();
                 }
                 this.hideGhostDivider();
+                this.hideVerticalGhostDivider();
             }
         }
     }
     
-    isMouseNearExistingDivider(mousePosition, dividerPosition) {
+    isMouseNearExistingDivider(intersectionResult, dividerInfo) {
         const app = window.app;
         if (!app) return false;
         
         // Define "near" as within a certain distance of the divider
         const nearDistance = app.currentConfig.units === 'metric' ? 3 : 1.5; // 3cm or 1.5"
         
-        const distance = Math.abs(mousePosition - dividerPosition);
-        const isNear = distance <= nearDistance;
-        
-        if (this.debugMode) {
-            console.log(`Mouse at ${mousePosition.toFixed(2)}, divider at ${dividerPosition.toFixed(2)}, distance: ${distance.toFixed(2)}, near: ${isNear}`);
+        if (dividerInfo.type === 'horizontal') {
+            // For horizontal dividers, check Y position
+            const mousePosition = intersectionResult.position || intersectionResult.positionY;
+            const distance = Math.abs(mousePosition - dividerInfo.position);
+            const isNear = distance <= nearDistance;
+            
+            if (this.debugMode) {
+                console.log(`Horizontal divider - Mouse at ${mousePosition.toFixed(2)}, divider at ${dividerInfo.position.toFixed(2)}, distance: ${distance.toFixed(2)}, near: ${isNear}`);
+            }
+            
+            return isNear;
+        } else if (dividerInfo.type === 'vertical') {
+            // For vertical dividers, check X position proximity
+            const distanceX = Math.abs(intersectionResult.positionX - dividerInfo.positionX);
+            
+            // For vertical dividers, check if mouse is within the full interior height
+            const interiorHeight = app.getInteriorHeight();
+            const mouseY = intersectionResult.positionY;
+            const isWithinVerticalBounds = mouseY >= 0 && mouseY <= interiorHeight;
+            
+            const isNearX = distanceX <= nearDistance;
+            const isNear = isNearX && isWithinVerticalBounds;
+            
+            if (this.debugMode) {
+                console.log(`Vertical divider - Mouse at X=${intersectionResult.positionX.toFixed(2)}, Y=${mouseY.toFixed(2)}, divider at X=${dividerInfo.positionX.toFixed(2)}, distanceX: ${distanceX.toFixed(2)}, withinBounds: ${isWithinVerticalBounds}, near: ${isNear}`);
+            }
+            
+            return isNear;
         }
         
-        return isNear;
+        return false;
     }
     
     onMouseClick(event) {
@@ -484,14 +562,42 @@ export class ShelfGenerator {
             console.log('In NORMAL state - checking for ghost divider');
             const result = this.getShelfInteriorIntersection();
             if (result !== null) {
-                const sectionInfo = this.detectHoveredSection(result.position);
-                if (sectionInfo && sectionInfo.canAdd) {
-                    console.log(`Adding divider at position: ${sectionInfo.centerPosition.toFixed(2)}`);
+                const horizontalSectionInfo = this.detectHoveredSection(result.position);
+                const verticalSectionInfo = this.detectHoveredVerticalSection(result.positionX, result.positionY);
+                
+                // Use same intelligent prioritization logic as hover
+                const interiorWidth = this.currentConfig.width - (2 * this.currentConfig.materialThickness);
+                const normalizedX = result.positionX / (interiorWidth / 2); // -1 to 1
+                const nearLeftEdge = normalizedX < -0.4;
+                const nearRightEdge = normalizedX > 0.4;
+                const preferVertical = nearLeftEdge || nearRightEdge;
+                
+                if (preferVertical && verticalSectionInfo && verticalSectionInfo.canAdd) {
+                    console.log(`Adding vertical divider at X position: ${verticalSectionInfo.centerPositionX.toFixed(2)} (near edge)`);
+                    
+                    // XState handles the vertical addition
+                    this.stateMachine.send({ 
+                        type: 'CLICK_EMPTY_SPACE', 
+                        positionX: verticalSectionInfo.centerPositionX,
+                        dividerType: 'vertical'
+                    });
+                } else if (horizontalSectionInfo && horizontalSectionInfo.canAdd) {
+                    console.log(`Adding horizontal divider at position: ${horizontalSectionInfo.centerPosition.toFixed(2)}`);
                     
                     // XState handles the addition now
                     this.stateMachine.send({ 
                         type: 'CLICK_EMPTY_SPACE', 
-                        position: sectionInfo.centerPosition 
+                        position: horizontalSectionInfo.centerPosition,
+                        dividerType: 'horizontal'
+                    });
+                } else if (verticalSectionInfo && verticalSectionInfo.canAdd) {
+                    console.log(`Adding vertical divider at X position: ${verticalSectionInfo.centerPositionX.toFixed(2)} (fallback)`);
+                    
+                    // XState handles the vertical addition
+                    this.stateMachine.send({ 
+                        type: 'CLICK_EMPTY_SPACE', 
+                        positionX: verticalSectionInfo.centerPositionX,
+                        dividerType: 'vertical'
                     });
                 }
             }
@@ -597,23 +703,34 @@ export class ShelfGenerator {
         const hit = intersects[0];
         const worldPoint = hit.point;
         
-        // Convert world Y position to shelf interior position (0 to interiorHeight)
-        // Since the scene uses app units, worldPoint.y is already in app units
+        // Convert world positions to shelf interior coordinates
+        // Since the scene uses app units, worldPoint is already in app units
         // Account for shelf centering by subtracting shelf's position
         const shelfWorldY = this.shelfGroup?.position?.y || 0;
-        const shelfInteriorY = worldPoint.y - (shelfWorldY + thickness); // Subtract shelf position + bottom shelf thickness
+        const shelfWorldX = this.shelfGroup?.position?.x || 0;
+        
+        const shelfInteriorY = worldPoint.y - (shelfWorldY + thickness); // Y: bottom to top (0 to interiorHeight)
+        const shelfInteriorX = worldPoint.x - shelfWorldX; // X: left to right (-interiorWidth/2 to +interiorWidth/2)
         
         const originalConfig = app.currentConfig;
         const units = originalConfig.units;
         
-        // shelfInteriorY is already in the correct app units
-        const position = shelfInteriorY;
+        // shelfInteriorY and shelfInteriorX are already in the correct app units
+        const positionY = shelfInteriorY;
+        const positionX = shelfInteriorX;
         
         // Removed verbose intersection debug
         
         // Only return valid positions within shelf bounds (all in app units)
-        if (shelfInteriorY >= 0 && shelfInteriorY <= interiorHeight) {
-            return { position, units, worldPoint };
+        if (shelfInteriorY >= 0 && shelfInteriorY <= interiorHeight && 
+            shelfInteriorX >= -interiorWidth/2 && shelfInteriorX <= interiorWidth/2) {
+            return { 
+                position: positionY,  // Keep legacy Y position for compatibility
+                positionY: positionY, // Explicit Y position
+                positionX: positionX, // New X position for vertical dividers
+                units, 
+                worldPoint 
+            };
         }
         
         return null;
@@ -885,7 +1002,7 @@ export class ShelfGenerator {
         // Sort dividers by position
         const sortedDividers = [...config.shelfLayout].sort((a, b) => a.position - b.position);
         
-        // Create horizontal dividers and their associated vertical dividers
+        // Create horizontal dividers
         sortedDividers.forEach((dividerConfig, index) => {
             const dividerY = baseY + dividerConfig.position;
             
@@ -909,68 +1026,47 @@ export class ShelfGenerator {
             };
             
             dividers.push(horizontalDivider);
-            
-            // Create vertical dividers based on new control scheme:
-            // First divider controls both above and below spaces
-            // Other dividers only control above space
-            const spacesToProcess = [];
-            
-            if (index === 0) {
-                // First divider: handle both spaces
-                spacesToProcess.push('above', 'below');
-            } else {
-                // Other dividers: only handle above space
-                spacesToProcess.push('above');
-            }
-            
-            spacesToProcess.forEach(spaceType => {
-                const spaceConfig = dividerConfig.spaces[spaceType];
-                if (spaceConfig && spaceConfig.verticalDividers > 0) {
-                    const sectionWidth = shelfWidth / (spaceConfig.verticalDividers + 1);
-                    
-                    // Calculate the bounds of this space
-                    let sectionBottom, sectionTop;
-                    
-                    if (spaceType === 'above') {
-                        sectionBottom = dividerY;
-                        // Find the next divider above or use the top shelf
-                        if (index === sortedDividers.length - 1) {
-                            sectionTop = baseY + interiorHeight;
-                        } else {
-                            const nextDivider = sortedDividers[index + 1];
-                            sectionTop = baseY + nextDivider.position;
-                        }
-                    } else { // below
-                        sectionTop = dividerY;
-                        sectionBottom = baseY; // Always goes to bottom for first divider
-                    }
-                    
-                    const sectionHeight = sectionTop - sectionBottom;
-                    
-                    if (sectionHeight > thickness) {
-                        for (let vIndex = 1; vIndex <= spaceConfig.verticalDividers; vIndex++) {
-                            const dividerX = -shelfWidth / 2 + (vIndex * sectionWidth);
-                            
-                            const verticalDividerGeometry = new THREE.BoxGeometry(
-                                thickness,
-                                sectionHeight,
-                                shelfDepth
-                            );
-                            
-                            const verticalDivider = new THREE.Mesh(verticalDividerGeometry, materials.edge.clone());
-                            verticalDivider.position.set(
-                                dividerX, 
-                                sectionBottom + (sectionHeight / 2), 
-                                0
-                            );
-                            verticalDivider.castShadow = true;
-                            verticalDivider.receiveShadow = true;
-                            dividers.push(verticalDivider);
-                        }
-                    }
-                }
-            });
         });
+
+        // Create vertical dividers (independent of horizontal dividers)
+        if (config.verticalDividers) {
+            console.log('🔧 createDividers: Creating vertical dividers, count:', config.verticalDividers.length);
+            console.log('🔧 createDividers: Vertical dividers array:', config.verticalDividers);
+            
+            config.verticalDividers.forEach((verticalDividerConfig, index) => {
+                const dividerX = verticalDividerConfig.position;
+                
+                console.log(`🔧 createDividers: Creating vertical divider ${index}, position: ${dividerX}`);
+                
+                const verticalDividerGeometry = new THREE.BoxGeometry(
+                    thickness,
+                    interiorHeight,
+                    shelfDepth
+                );
+                
+                const verticalDivider = new THREE.Mesh(verticalDividerGeometry, materials.edge.clone());
+                verticalDivider.position.set(
+                    dividerX, 
+                    baseY + (interiorHeight / 2), 
+                    0
+                );
+                verticalDivider.castShadow = true;
+                verticalDivider.receiveShadow = true;
+                
+                // Add metadata for hover detection and interaction
+                verticalDivider.userData = {
+                    type: 'vertical-divider',
+                    dividerId: verticalDividerConfig.id,
+                    position: verticalDividerConfig.position
+                };
+                
+                console.log(`🔧 createDividers: Vertical divider ${index} created at world position:`, verticalDivider.position);
+                
+                dividers.push(verticalDivider);
+            });
+        } else {
+            console.log('🔧 createDividers: No vertical dividers in config');
+        }
         
         return dividers;
     }
@@ -1294,6 +1390,61 @@ export class ShelfGenerator {
         return null;
     }
     
+    // Vertical Section Detection - determines which vertical section mouse is hovering
+    detectHoveredVerticalSection(mouseXPosition, mouseYPosition) {
+        if (!this.currentConfig) return null;
+        
+        const app = window.app;
+        if (!app) return null;
+        
+        const interiorHeight = app.getInteriorHeight();
+        const interiorWidth = this.currentConfig.width - (2 * this.currentConfig.materialThickness);
+        const verticalDividers = [...app.currentConfig.verticalDividers].sort((a, b) => a.position - b.position);
+        const minSectionWidth = app.currentConfig.units === 'metric' ? 8 : 3; // 8cm or 3" minimum
+        
+        // Check if mouse is within shelf bounds
+        if (mouseYPosition < 0 || mouseYPosition > interiorHeight || 
+            mouseXPosition < -interiorWidth/2 || mouseXPosition > interiorWidth/2) {
+            return null;
+        }
+        
+        // Empty shelf case
+        if (verticalDividers.length === 0) {
+            const centerX = 0; // Center of shelf
+            const canAdd = interiorWidth >= minSectionWidth * 2;
+            
+            return {
+                centerPositionX: centerX,
+                canAdd: canAdd,
+                sectionIndex: 0,
+                sectionBounds: { left: -interiorWidth/2, right: interiorWidth/2 },
+                sectionWidth: interiorWidth
+            };
+        }
+        
+        // Find which vertical section the mouse is in
+        for (let i = 0; i <= verticalDividers.length; i++) {
+            const leftBound = i === 0 ? -interiorWidth/2 : verticalDividers[i - 1].position;
+            const rightBound = i === verticalDividers.length ? interiorWidth/2 : verticalDividers[i].position;
+            
+            if (mouseXPosition >= leftBound && mouseXPosition <= rightBound) {
+                const sectionWidth = rightBound - leftBound;
+                const centerX = leftBound + (sectionWidth / 2);
+                const canAdd = sectionWidth >= minSectionWidth * 2;
+                
+                return {
+                    centerPositionX: centerX,
+                    canAdd: canAdd,
+                    sectionIndex: i,
+                    sectionBounds: { left: leftBound, right: rightBound },
+                    sectionWidth: sectionWidth
+                };
+            }
+        }
+        
+        return null;
+    }
+    
     updateGhostDivider(sectionInfo) {
         if (!sectionInfo || !sectionInfo.canAdd) {
             this.hideGhostDivider();
@@ -1335,9 +1486,103 @@ export class ShelfGenerator {
         this.shelfGroup.add(this.ghostDivider); // Add to shelfGroup to get same transformations
     }
     
+    createVerticalGhostDivider() {
+        if (!this.currentConfig) return;
+        
+        const thickness = this.currentConfig.materialThickness;
+        const shelfDepth = this.currentConfig.depth;
+        
+        // Vertical ghost divider geometry (thin vertical panel)
+        const geometry = new THREE.BoxGeometry(thickness, 10, shelfDepth); // Height will be adjusted dynamically
+        const material = new THREE.MeshBasicMaterial({
+            color: 0x00ff99, // Slightly different green for vertical dividers
+            transparent: true,
+            opacity: 0.5,
+            side: THREE.DoubleSide,
+            depthTest: false
+        });
+        
+        this.verticalGhostDivider = new THREE.Mesh(geometry, material);
+        this.verticalGhostDivider.position.set(0, 0, 0.1); // Slightly forward to avoid z-fighting
+        this.verticalGhostDivider.visible = false;
+        this.verticalGhostDivider.renderOrder = 999;
+        this.shelfGroup.add(this.verticalGhostDivider);
+    }
+    
+    updateVerticalGhostDivider(verticalSectionInfo) {
+        if (!verticalSectionInfo || !verticalSectionInfo.canAdd) {
+            this.hideVerticalGhostDivider();
+            return;
+        }
+        
+        if (!this.verticalGhostDivider) {
+            this.createVerticalGhostDivider();
+        }
+        
+        const app = window.app;
+        if (!app) return;
+        
+        // Calculate the height and position for this vertical section
+        const thickness = this.currentConfig.materialThickness;
+        const interiorHeight = app.getInteriorHeight();
+        
+        // Get the bounds of the horizontal section this vertical divider will be in
+        let sectionBottom = 0;
+        let sectionTop = interiorHeight;
+        
+        if (verticalSectionInfo.controllingDivider) {
+            const dividers = [...app.currentConfig.shelfLayout].sort((a, b) => a.position - b.position);
+            const dividerIndex = dividers.findIndex(d => d.id === verticalSectionInfo.controllingDivider.id);
+            
+            if (verticalSectionInfo.spaceType === 'below') {
+                // Below first divider
+                sectionTop = verticalSectionInfo.controllingDivider.position;
+                sectionBottom = 0;
+            } else if (verticalSectionInfo.spaceType === 'above') {
+                // Above a divider
+                sectionBottom = verticalSectionInfo.controllingDivider.position;
+                // Find next divider or use top
+                if (dividerIndex === dividers.length - 1) {
+                    sectionTop = interiorHeight;
+                } else {
+                    sectionTop = dividers[dividerIndex + 1].position;
+                }
+            }
+        }
+        
+        const sectionHeight = sectionTop - sectionBottom;
+        const sectionCenterY = sectionBottom + (sectionHeight / 2);
+        
+        // Update geometry to match the section height
+        this.verticalGhostDivider.geometry.dispose();
+        this.verticalGhostDivider.geometry = new THREE.BoxGeometry(
+            thickness,
+            sectionHeight,
+            this.currentConfig.depth
+        );
+        
+        // Position the vertical ghost divider
+        const shelfWorldY = this.shelfGroup?.position?.y || 0;
+        const shelfWorldX = this.shelfGroup?.position?.x || 0;
+        
+        this.verticalGhostDivider.position.set(
+            shelfWorldX + verticalSectionInfo.centerPositionX,
+            shelfWorldY + thickness + sectionCenterY,
+            0.1 // Slightly forward to avoid z-fighting
+        );
+        
+        this.verticalGhostDivider.visible = true;
+    }
+    
     hideGhostDivider() {
         if (this.ghostDivider) {
             this.ghostDivider.visible = false;
+        }
+    }
+    
+    hideVerticalGhostDivider() {
+        if (this.verticalGhostDivider) {
+            this.verticalGhostDivider.visible = false;
         }
     }
     
@@ -1355,11 +1600,25 @@ export class ShelfGenerator {
             }
             this.ghostDivider = null;
         }
+        
+        if (this.verticalGhostDivider) {
+            // Remove vertical ghost divider from scene and dispose properly
+            if (this.verticalGhostDivider.parent) {
+                this.verticalGhostDivider.parent.remove(this.verticalGhostDivider);
+            }
+            if (this.verticalGhostDivider.geometry) {
+                this.verticalGhostDivider.geometry.dispose();
+            }
+            if (this.verticalGhostDivider.material) {
+                this.verticalGhostDivider.material.dispose();
+            }
+            this.verticalGhostDivider = null;
+        }
     }
     
     // Existing Divider Hover Detection
     detectHoveredExistingDivider() {
-        // Raycast against all shelf objects to find horizontal dividers
+        // Raycast against all shelf objects to find both horizontal and vertical dividers
         const intersects = this.raycaster.intersectObjects(this.shelfGroup.children, true);
         
         for (const intersect of intersects) {
@@ -1369,7 +1628,16 @@ export class ShelfGenerator {
                     mesh: object,
                     dividerId: object.userData.dividerId,
                     position: object.userData.position,
-                    intersection: intersect
+                    intersection: intersect,
+                    type: 'horizontal'
+                };
+            } else if (object.userData && object.userData.type === 'vertical-divider') {
+                return {
+                    mesh: object,
+                    dividerId: object.userData.dividerId,
+                    positionX: object.userData.position, // X position of the vertical divider
+                    intersection: intersect,
+                    type: 'vertical'
                 };
             }
         }
@@ -1466,10 +1734,18 @@ export class ShelfGenerator {
         
         // Show measurements and delete button
         this.showMeasurements(dividerInfo);
-        this.showDeleteButton(dividerInfo);
+        
+        // Only show delete button for horizontal dividers (vertical dividers are managed by count)
+        if (dividerInfo.type !== 'vertical') {
+            this.showDeleteButton(dividerInfo);
+        }
         
         if (this.debugMode) {
-            console.log('Selected divider:', dividerInfo.dividerId);
+            if (dividerInfo.type === 'vertical') {
+                console.log('Selected vertical divider:', dividerInfo.controllingDividerId, dividerInfo.spaceType, 'index:', dividerInfo.dividerIndex);
+            } else {
+                console.log('Selected horizontal divider:', dividerInfo.dividerId);
+            }
         }
     }
     
@@ -1486,7 +1762,11 @@ export class ShelfGenerator {
             this.hideMeasurements();
             this.hideDeleteButton();
             
-            console.log('Deselected divider:', selectedDivider.dividerId);
+            if (selectedDivider.type === 'vertical') {
+                console.log('Deselected vertical divider:', selectedDivider.controllingDividerId, selectedDivider.spaceType, 'index:', selectedDivider.dividerIndex);
+            } else {
+                console.log('Deselected horizontal divider:', selectedDivider.dividerId);
+            }
         }
         
         // NOTE: State management is now handled by XState
@@ -1531,20 +1811,39 @@ export class ShelfGenerator {
         // Use the same raycasting approach as ghost divider positioning
         const result = this.getShelfInteriorIntersection();
         if (result !== null) {
-            // Apply constraints to the new position
-            const constrainedPosition = this.calculateConstrainedPositionAbsolute(result.position);
-            
-            if (constrainedPosition !== null) {
-                // Update divider position in real-time
-                this.updateDividerPosition(constrainedPosition);
+            if (selectedDivider.type === 'vertical') {
+                // Handle vertical divider dragging (X-axis)
+                const constrainedPositionX = this.calculateConstrainedPositionVertical(result.positionX, selectedDivider);
                 
-                // Update measurements
-                if (this.measurementOverlays.length > 0) {
-                    this.showMeasurements(selectedDivider);
+                if (constrainedPositionX !== null) {
+                    // Update vertical divider position in real-time
+                    this.updateVerticalDividerPosition(selectedDivider, constrainedPositionX);
+                    
+                    // Update measurements
+                    if (this.measurementOverlays.length > 0) {
+                        this.showMeasurements(selectedDivider);
+                    }
+                    
+                    if (this.debugMode) {
+                        console.log(`Dragging vertical divider to X: ${constrainedPositionX.toFixed(2)} (cursor at: ${result.positionX.toFixed(2)})`);
+                    }
                 }
+            } else {
+                // Handle horizontal divider dragging (Y-axis) - existing logic
+                const constrainedPosition = this.calculateConstrainedPositionAbsolute(result.position);
                 
-                if (this.debugMode) {
-                    console.log(`Dragging to position: ${constrainedPosition.toFixed(2)} (cursor at: ${result.position.toFixed(2)})`);
+                if (constrainedPosition !== null) {
+                    // Update divider position in real-time
+                    this.updateDividerPosition(constrainedPosition);
+                    
+                    // Update measurements
+                    if (this.measurementOverlays.length > 0) {
+                        this.showMeasurements(selectedDivider);
+                    }
+                    
+                    if (this.debugMode) {
+                        console.log(`Dragging horizontal divider to Y: ${constrainedPosition.toFixed(2)} (cursor at: ${result.position.toFixed(2)})`);
+                    }
                 }
             }
         }
@@ -1584,6 +1883,72 @@ export class ShelfGenerator {
         newPosition = Math.round(newPosition / snapIncrement) * snapIncrement;
         
         return newPosition;
+    }
+
+    calculateConstrainedPositionVertical(absolutePositionX, selectedDivider) {
+        const app = window.app;
+        if (!app || !selectedDivider) return null;
+        
+        const interiorWidth = this.currentConfig.width - (2 * this.currentConfig.materialThickness);
+        const verticalDividers = [...app.currentConfig.verticalDividers].sort((a, b) => a.position - b.position);
+        const currentIndex = verticalDividers.findIndex(d => d.id === selectedDivider.dividerId);
+        
+        // Define minimum spacing between vertical dividers
+        const minSpacing = app.currentConfig.units === 'metric' ? 3 : 1.5; // 3cm or 1.5"
+        
+        // Calculate constraints based on adjacent dividers
+        let minPositionX = -interiorWidth / 2 + minSpacing; // Left edge + min spacing
+        let maxPositionX = interiorWidth / 2 - minSpacing; // Right edge - min spacing
+        
+        // Constraint from divider to the left
+        if (currentIndex > 0) {
+            minPositionX = verticalDividers[currentIndex - 1].position + minSpacing;
+        }
+        
+        // Constraint from divider to the right
+        if (currentIndex < verticalDividers.length - 1) {
+            maxPositionX = verticalDividers[currentIndex + 1].position - minSpacing;
+        }
+        
+        // Apply constraints
+        let newPositionX = Math.max(minPositionX, Math.min(maxPositionX, absolutePositionX));
+        
+        // Optional: Snap to reasonable increments
+        const snapIncrement = app.currentConfig.units === 'metric' ? 0.5 : 0.25; // 0.5cm or 0.25"
+        newPositionX = Math.round(newPositionX / snapIncrement) * snapIncrement;
+        
+        if (this.debugMode) {
+            console.log(`Vertical constraint calculation:
+                Interior width: ${interiorWidth.toFixed(2)}
+                Current index: ${currentIndex}
+                Min X: ${minPositionX.toFixed(2)}
+                Max X: ${maxPositionX.toFixed(2)}
+                Requested X: ${absolutePositionX.toFixed(2)}
+                Constrained X: ${newPositionX.toFixed(2)}`);
+        }
+        
+        return newPositionX;
+    }
+
+    updateVerticalDividerPosition(selectedDivider, newPositionX) {
+        if (!selectedDivider) return;
+        
+        const app = window.app;
+        if (!app) return;
+        
+        // Update the 3D mesh position (X-axis)
+        const shelfWorldX = this.shelfGroup?.position?.x || 0;
+        selectedDivider.mesh.position.x = shelfWorldX + newPositionX;
+        
+        // Update the divider data
+        selectedDivider.positionX = newPositionX;
+        
+        // Note: Vertical dividers don't have individual delete buttons in the current system
+        // They're managed by count, so no delete button position update needed
+        
+        if (this.debugMode) {
+            console.log(`Updated vertical divider mesh position to X: ${(shelfWorldX + newPositionX).toFixed(2)} (shelf: ${shelfWorldX.toFixed(2)}, relative: ${newPositionX.toFixed(2)})`);
+        }
     }
 
     // Keep the old method for backwards compatibility (though it's no longer used)
@@ -1661,6 +2026,17 @@ export class ShelfGenerator {
         const app = window.app;
         if (!app) return;
         
+        if (dividerInfo.type === 'vertical') {
+            this.showVerticalMeasurements(dividerInfo);
+        } else {
+            this.showHorizontalMeasurements(dividerInfo);
+        }
+    }
+    
+    showHorizontalMeasurements(dividerInfo) {
+        const app = window.app;
+        if (!app) return;
+        
         const interiorHeight = app.getInteriorHeight();
         const dividers = [...app.currentConfig.shelfLayout].sort((a, b) => a.position - b.position);
         const currentPosition = dividerInfo.position;
@@ -1680,7 +2056,7 @@ export class ShelfGenerator {
         }
         
         if (this.debugMode) {
-            console.log(`Measurement debug:
+            console.log(`Horizontal measurement debug:
                 Interior height: ${interiorHeight.toFixed(2)}${units}
                 Current position: ${currentPosition.toFixed(2)}${units}
                 Current index: ${currentIndex}
@@ -1716,6 +2092,67 @@ export class ShelfGenerator {
         }
     }
     
+    showVerticalMeasurements(dividerInfo) {
+        const app = window.app;
+        if (!app) return;
+        
+        const interiorWidth = this.currentConfig.width - (2 * this.currentConfig.materialThickness);
+        const units = app.currentConfig.units === 'metric' ? 'cm' : '"';
+        
+        // Get all vertical dividers and sort by position
+        const verticalDividers = [...app.currentConfig.verticalDividers].sort((a, b) => a.position - b.position);
+        const currentPosition = dividerInfo.position;
+        
+        // Calculate distances to left and right
+        let distanceLeft = currentPosition - (-interiorWidth/2); // Distance to left edge
+        let distanceRight = (interiorWidth/2) - currentPosition; // Distance to right edge
+        
+        // Find adjacent vertical dividers
+        const currentIndex = verticalDividers.findIndex(d => d.id === dividerInfo.dividerId);
+        if (currentIndex > 0) {
+            distanceLeft = currentPosition - verticalDividers[currentIndex - 1].position;
+        }
+        if (currentIndex < verticalDividers.length - 1) {
+            distanceRight = verticalDividers[currentIndex + 1].position - currentPosition;
+        }
+        
+        if (this.debugMode) {
+            console.log(`Vertical measurement debug:
+                Interior width: ${interiorWidth.toFixed(2)}${units}
+                Current position: ${currentPosition.toFixed(2)}${units}
+                Current index: ${currentIndex}
+                Distance left: ${distanceLeft.toFixed(2)}${units}
+                Distance right: ${distanceRight.toFixed(2)}${units}
+                Total vertical dividers: ${verticalDividers.length}`);
+        }
+        
+        // Create measurement text objects
+        const worldY = dividerInfo.mesh.position.y;
+        const worldX = dividerInfo.mesh.position.x;
+        const worldZ = dividerInfo.mesh.position.z + this.currentConfig.depth / 2 + 2; // In front of shelf
+        
+        // Create text sprites for measurements (positioned to left and right of divider)
+        this.createMeasurementText(
+            `${distanceLeft.toFixed(1)}${units}`,
+            worldX - (distanceLeft / 2),
+            worldY,
+            worldZ,
+            'left'
+        );
+        
+        this.createMeasurementText(
+            `${distanceRight.toFixed(1)}${units}`,
+            worldX + (distanceRight / 2),
+            worldY,
+            worldZ,
+            'right'
+        );
+        
+        if (this.debugMode) {
+            console.log(`Vertical measurements: ${distanceLeft.toFixed(1)}${units} left, ${distanceRight.toFixed(1)}${units} right`);
+        }
+    }
+    
     createMeasurementText(text, x, y, z, type) {
         // Create canvas for text
         const canvas = document.createElement('canvas');
@@ -1727,8 +2164,26 @@ export class ShelfGenerator {
         context.fillStyle = 'rgba(255, 255, 255, 0.95)';
         context.fillRect(0, 0, canvas.width, canvas.height);
         
-        // Draw border
-        context.strokeStyle = type === 'below' ? '#2196F3' : '#4CAF50';
+        // Draw border with different colors for different measurement types
+        let borderColor;
+        switch (type) {
+            case 'below':
+                borderColor = '#2196F3'; // Blue for below
+                break;
+            case 'above':
+                borderColor = '#4CAF50'; // Green for above
+                break;
+            case 'left':
+                borderColor = '#FF9800'; // Orange for left
+                break;
+            case 'right':
+                borderColor = '#9C27B0'; // Purple for right
+                break;
+            default:
+                borderColor = '#666666'; // Gray fallback
+        }
+        
+        context.strokeStyle = borderColor;
         context.lineWidth = 3;
         context.strokeRect(2, 2, canvas.width - 4, canvas.height - 4);
         

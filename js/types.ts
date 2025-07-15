@@ -10,19 +10,31 @@ export interface ShelfConfig {
     depth: number;
     materialThickness: number;
     materialType: string;
-    shelfLayout: DividerInfo[];
+    shelfLayout: DividerInfo[]; // Horizontal dividers
+    verticalDividers: VerticalDividerInfo[]; // Vertical dividers
     backPanel: boolean;
     edgeTreatment: string;
     woodGrain: boolean;
     units: 'imperial' | 'metric';
 }
 
-export interface DividerInfo {
+export interface HorizontalDividerInfo {
     dividerId?: string; // Optional for legacy compatibility
     id: string;
-    position: number;
+    position: number; // Y-position from bottom (0 to interiorHeight)
     mesh?: THREE.Object3D; // Optional for UI-only dividers
     intersection?: THREE.Intersection<THREE.Object3D>;
+}
+
+export interface VerticalDividerInfo {
+    id: string;
+    position: number; // X-position relative to shelf interior (-width/2 to +width/2)
+    mesh?: THREE.Object3D; // Optional for UI-only dividers
+    intersection?: THREE.Intersection<THREE.Object3D>;
+}
+
+// Legacy compatibility - keep existing interface name
+export interface DividerInfo extends HorizontalDividerInfo {
     spaces?: {
         above: { verticalDividers: number };
         below: { verticalDividers: number };

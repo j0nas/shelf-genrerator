@@ -1,0 +1,536 @@
+// @ts-nocheck
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// Pure view layer - renders 3D scene based on state machine state
+export class ShelfRenderer {
+    scene: THREE.Scene;
+    camera: THREE.PerspectiveCamera;
+    renderer: THREE.WebGLRenderer;
+    controls: OrbitControls;
+    shelfGroup: THREE.Group;
+    container: HTMLElement;
+    
+    // Cached objects for efficiency
+    dividerMeshes: Map<string, THREE.Mesh> = new Map();
+    ghostDivider: THREE.Mesh | null = null;
+    verticalGhostDivider: THREE.Mesh | null = null;
+    
+    constructor(containerId: string) {
+        this.container = document.getElementById(containerId)!;
+        this.init();
+    }
+    
+    init() {
+        this.setupScene();
+        this.setupCamera();
+        this.setupRenderer();
+        this.setupControls();
+        this.setupLighting();
+        this.animate();
+        
+        window.addEventListener('resize', () => this.onWindowResize());
+    }
+    
+    setupScene() {
+        this.scene = new THREE.Scene();
+        this.scene.background = new THREE.Color(0xf0f8ff);
+        
+        this.shelfGroup = new THREE.Group();
+        this.scene.add(this.shelfGroup);
+        
+        const gridHelper = new THREE.GridHelper(100, 100, 0x888888, 0xcccccc);
+        gridHelper.position.y = -0.1;
+        this.scene.add(gridHelper);
+    }
+    
+    setupCamera() {
+        const aspect = this.container.clientWidth / this.container.clientHeight;
+        this.camera = new THREE.PerspectiveCamera(75, aspect, 0.1, 1000);
+        this.camera.position.set(50, 50, 50);
+        this.camera.lookAt(0, 0, 0);
+    }
+    
+    setupRenderer() {
+        this.renderer = new THREE.WebGLRenderer({ antialias: true });
+        this.renderer.setSize(this.container.clientWidth, this.container.clientHeight);
+        this.renderer.shadowMap.enabled = true;
+        this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        this.container.appendChild(this.renderer.domElement);
+    }
+    
+    setupControls() {
+        this.controls = new OrbitControls(this.camera, this.renderer.domElement);
+        this.controls.enableDamping = true;
+        this.controls.dampingFactor = 0.08;
+        this.controls.screenSpacePanning = true;
+        this.controls.panSpeed = 1.0;
+        this.controls.minDistance = 10;
+        this.controls.maxDistance = 200;
+        this.controls.zoomSpeed = 0.3;
+        this.controls.rotateSpeed = 0.8;
+        this.controls.maxPolarAngle = Math.PI / 2;
+        
+        this.controls.keys = {
+            LEFT: 'ArrowLeft',
+            UP: 'ArrowUp',
+            RIGHT: 'ArrowRight',
+            BOTTOM: 'ArrowDown'
+        };
+        
+        this.controls.mouseButtons = {
+            LEFT: THREE.MOUSE.ROTATE,
+            MIDDLE: THREE.MOUSE.DOLLY,
+            RIGHT: THREE.MOUSE.PAN
+        };
+        
+        this.controls.touches = {
+            ONE: THREE.TOUCH.ROTATE,
+            TWO: THREE.TOUCH.DOLLY_PAN
+        };
+    }
+    
+    setupLighting() {
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+        this.scene.add(ambientLight);
+        
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        directionalLight.position.set(50, 50, 25);
+        directionalLight.castShadow = true;
+        directionalLight.shadow.mapSize.width = 2048;
+        directionalLight.shadow.mapSize.height = 2048;
+        directionalLight.shadow.camera.near = 0.5;
+        directionalLight.shadow.camera.far = 200;
+        directionalLight.shadow.camera.left = -50;
+        directionalLight.shadow.camera.right = 50;
+        directionalLight.shadow.camera.top = 50;
+        directionalLight.shadow.camera.bottom = -50;
+        this.scene.add(directionalLight);
+        
+        const light2 = new THREE.DirectionalLight(0xffffff, 0.4);
+        light2.position.set(-25, 25, -25);
+        this.scene.add(light2);
+    }
+    
+    animate() {
+        requestAnimationFrame(() => this.animate());
+        this.controls.update();
+        this.renderer.render(this.scene, this.camera);
+    }
+    
+    onWindowResize() {
+        this.camera.aspect = this.container.clientWidth / this.container.clientHeight;
+        this.camera.updateProjectionMatrix();
+        this.renderer.setSize(this.container.clientWidth, this.container.clientHeight);
+    }
+    
+    // Pure render method - updates scene based on state
+    render(state: any) {
+        if (!state.context.shelfConfig) return;
+        
+        this.renderShelfStructure(state.context.shelfConfig);
+        this.renderDividers(state.context);
+        this.renderGhostDivider(state.context.ghostDivider, state.context.shelfConfig);
+        this.renderSelectionHighlight(state.context.selectedDivider);
+        this.renderHoverHighlight(state.context.hoveredDivider);
+        this.updateCameraControls(state.context.isDragging);
+    }
+    
+    renderShelfStructure(config: any) {
+        // Clear existing shelf structure
+        this.shelfGroup.children.forEach(child => {
+            if (child.userData.type === 'shelf-structure') {
+                this.shelfGroup.remove(child);
+                this.disposeMesh(child);
+            }
+        });
+        
+        const materials = this.createMaterials(config);
+        const shelfStructure = this.createShelfStructure(config, materials);
+        shelfStructure.userData.type = 'shelf-structure';
+        this.shelfGroup.add(shelfStructure);
+        this.centerShelf();
+    }
+    
+    renderDividers(context: any) {
+        const allDividers = [...context.horizontalDividers, ...context.verticalDividers];
+        const currentDividerIds = new Set(allDividers.map(d => d.id));
+        
+        // Remove dividers that no longer exist
+        for (const [id, mesh] of this.dividerMeshes) {
+            if (!currentDividerIds.has(id)) {
+                this.shelfGroup.remove(mesh);
+                this.disposeMesh(mesh);
+                this.dividerMeshes.delete(id);
+            }
+        }
+        
+        // Add or update dividers
+        const materials = this.createMaterials(context.shelfConfig);
+        
+        for (const divider of allDividers) {
+            let mesh = this.dividerMeshes.get(divider.id);
+            
+            if (!mesh) {
+                mesh = this.createDividerMesh(divider, context.shelfConfig, materials);
+                this.dividerMeshes.set(divider.id, mesh);
+                this.shelfGroup.add(mesh);
+            } else {
+                this.updateDividerPosition(mesh, divider, context.shelfConfig);
+            }
+        }
+    }
+    
+    createDividerMesh(divider: any, config: any, materials: any): THREE.Mesh {
+        const thickness = config.materialThickness;
+        const interiorHeight = config.height - (2 * thickness);
+        const interiorWidth = config.width - (2 * thickness);
+        const depth = config.depth;
+        
+        let geometry: THREE.BoxGeometry;
+        
+        if (divider.type === 'horizontal') {
+            geometry = new THREE.BoxGeometry(interiorWidth, thickness, depth);
+        } else {
+            geometry = new THREE.BoxGeometry(thickness, interiorHeight, depth);
+        }
+        
+        const mesh = new THREE.Mesh(geometry, materials.edge.clone());
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        
+        mesh.userData = {
+            type: `${divider.type}-divider`,
+            dividerId: divider.id,
+            position: divider.position,
+            dividerType: divider.type
+        };
+        
+        this.updateDividerPosition(mesh, divider, config);
+        
+        return mesh;
+    }
+    
+    updateDividerPosition(mesh: THREE.Mesh, divider: any, config: any) {
+        const thickness = config.materialThickness;
+        const interiorHeight = config.height - (2 * thickness);
+        
+        if (divider.type === 'horizontal') {
+            mesh.position.set(0, thickness + divider.position, 0);
+        } else {
+            mesh.position.set(divider.position, thickness + (interiorHeight / 2), 0);
+        }
+    }
+    
+    renderGhostDivider(ghostDivider: any, config: any) {
+        // Hide all ghost dividers first
+        if (this.ghostDivider) this.ghostDivider.visible = false;
+        if (this.verticalGhostDivider) this.verticalGhostDivider.visible = false;
+        
+        if (!ghostDivider || !ghostDivider.visible) return;
+        
+        if (ghostDivider.type === 'horizontal') {
+            if (!this.ghostDivider) {
+                this.ghostDivider = this.createHorizontalGhostDivider(config);
+                this.shelfGroup.add(this.ghostDivider);
+            }
+            
+            this.ghostDivider.position.y = config.materialThickness + ghostDivider.position;
+            this.ghostDivider.visible = true;
+        } else {
+            if (!this.verticalGhostDivider) {
+                this.verticalGhostDivider = this.createVerticalGhostDivider(config);
+                this.shelfGroup.add(this.verticalGhostDivider);
+            }
+            
+            const interiorHeight = config.height - (2 * config.materialThickness);
+            this.verticalGhostDivider.position.set(
+                ghostDivider.positionX,
+                config.materialThickness + (interiorHeight / 2),
+                0.1
+            );
+            this.verticalGhostDivider.visible = true;
+        }
+    }
+    
+    createHorizontalGhostDivider(config: any): THREE.Mesh {
+        const thickness = config.materialThickness;
+        const width = config.width - thickness;
+        const depth = config.depth;
+        
+        const geometry = new THREE.BoxGeometry(width, thickness, depth);
+        const material = new THREE.MeshBasicMaterial({
+            color: 0x00ff00,
+            transparent: true,
+            opacity: 0.5,
+            side: THREE.DoubleSide,
+            depthTest: false
+        });
+        
+        const mesh = new THREE.Mesh(geometry, material);
+        mesh.renderOrder = 999;
+        mesh.visible = false;
+        
+        return mesh;
+    }
+    
+    createVerticalGhostDivider(config: any): THREE.Mesh {
+        const thickness = config.materialThickness;
+        const interiorHeight = config.height - (2 * thickness);
+        const depth = config.depth;
+        
+        const geometry = new THREE.BoxGeometry(thickness, interiorHeight, depth);
+        const material = new THREE.MeshBasicMaterial({
+            color: 0x00ff99,
+            transparent: true,
+            opacity: 0.5,
+            side: THREE.DoubleSide,
+            depthTest: false
+        });
+        
+        const mesh = new THREE.Mesh(geometry, material);
+        mesh.renderOrder = 999;
+        mesh.visible = false;
+        
+        return mesh;
+    }
+    
+    renderSelectionHighlight(selectedDivider: any) {
+        // Clear existing highlights
+        this.shelfGroup.children.forEach(child => {
+            if (child.userData.type === 'selection-highlight') {
+                this.shelfGroup.remove(child);
+                this.disposeMesh(child);
+            }
+        });
+        
+        if (!selectedDivider) return;
+        
+        const mesh = this.dividerMeshes.get(selectedDivider.id);
+        if (!mesh) return;
+        
+        // Create selection highlight
+        const highlightGeometry = mesh.geometry.clone();
+        const highlightMaterial = new THREE.MeshBasicMaterial({
+            color: 0xff0000,
+            transparent: true,
+            opacity: 0.3,
+            side: THREE.DoubleSide
+        });
+        
+        const highlight = new THREE.Mesh(highlightGeometry, highlightMaterial);
+        highlight.position.copy(mesh.position);
+        highlight.scale.setScalar(1.02); // Slightly larger
+        highlight.userData.type = 'selection-highlight';
+        highlight.renderOrder = 998;
+        
+        this.shelfGroup.add(highlight);
+    }
+    
+    renderHoverHighlight(hoveredDivider: any) {
+        // Clear existing hover highlights
+        this.shelfGroup.children.forEach(child => {
+            if (child.userData.type === 'hover-highlight') {
+                this.shelfGroup.remove(child);
+                this.disposeMesh(child);
+            }
+        });
+        
+        if (!hoveredDivider) return;
+        
+        const mesh = this.dividerMeshes.get(hoveredDivider.id);
+        if (!mesh) return;
+        
+        // Create hover highlight
+        const highlightGeometry = mesh.geometry.clone();
+        const highlightMaterial = new THREE.MeshBasicMaterial({
+            color: 0xffff00,
+            transparent: true,
+            opacity: 0.2,
+            side: THREE.DoubleSide
+        });
+        
+        const highlight = new THREE.Mesh(highlightGeometry, highlightMaterial);
+        highlight.position.copy(mesh.position);
+        highlight.scale.setScalar(1.01); // Slightly larger
+        highlight.userData.type = 'hover-highlight';
+        highlight.renderOrder = 997;
+        
+        this.shelfGroup.add(highlight);
+    }
+    
+    updateCameraControls(isDragging: boolean) {
+        this.controls.enabled = !isDragging;
+    }
+    
+    createMaterials(config: any) {
+        const colorMap = {
+            plywood: { main: 0xD2B48C, edge: 0x8B7355 },
+            mdf: { main: 0xF5DEB3, edge: 0xDEB887 },
+            pine: { main: 0xFFF8DC, edge: 0xF0E68C },
+            oak: { main: 0xDEB887, edge: 0xCD853F },
+            maple: { main: 0xFAF0E6, edge: 0xF5DEB3 }
+        };
+        
+        const colors = colorMap[config.materialType] || colorMap.plywood;
+        
+        return {
+            main: new THREE.MeshLambertMaterial({ 
+                color: colors.main,
+                transparent: true,
+                opacity: 0.9
+            }),
+            edge: new THREE.MeshLambertMaterial({ 
+                color: colors.edge,
+                transparent: true,
+                opacity: 0.95
+            })
+        };
+    }
+    
+    createShelfStructure(config: any, materials: any): THREE.Group {
+        const group = new THREE.Group();
+        const thickness = config.materialThickness;
+        
+        // Create sides
+        const sideGeometry = new THREE.BoxGeometry(thickness, config.height, config.depth);
+        
+        const leftSide = new THREE.Mesh(sideGeometry, materials.main.clone());
+        leftSide.position.set(-config.width / 2 + thickness / 2, config.height / 2, 0);
+        leftSide.castShadow = true;
+        leftSide.receiveShadow = true;
+        
+        const rightSide = new THREE.Mesh(sideGeometry, materials.main.clone());
+        rightSide.position.set(config.width / 2 - thickness / 2, config.height / 2, 0);
+        rightSide.castShadow = true;
+        rightSide.receiveShadow = true;
+        
+        // Create top and bottom
+        const shelfGeometry = new THREE.BoxGeometry(config.width, thickness, config.depth);
+        
+        const topShelf = new THREE.Mesh(shelfGeometry, materials.main.clone());
+        topShelf.position.set(0, config.height - thickness / 2, 0);
+        topShelf.castShadow = true;
+        topShelf.receiveShadow = true;
+        
+        const bottomShelf = new THREE.Mesh(shelfGeometry, materials.main.clone());
+        bottomShelf.position.set(0, thickness / 2, 0);
+        bottomShelf.castShadow = true;
+        bottomShelf.receiveShadow = true;
+        
+        group.add(leftSide);
+        group.add(rightSide);
+        group.add(topShelf);
+        group.add(bottomShelf);
+        
+        // Add back panel if enabled
+        if (config.backPanel) {
+            const backGeometry = new THREE.BoxGeometry(config.width, config.height, thickness);
+            const backPanel = new THREE.Mesh(backGeometry, materials.main.clone());
+            backPanel.position.set(0, config.height / 2, -config.depth / 2 + thickness / 2);
+            backPanel.castShadow = true;
+            backPanel.receiveShadow = true;
+            group.add(backPanel);
+        }
+        
+        return group;
+    }
+    
+    centerShelf() {
+        this.shelfGroup.position.set(0, 0, 0);
+    }
+    
+    disposeMesh(mesh: any) {
+        if (mesh.geometry) mesh.geometry.dispose();
+        if (mesh.material) {
+            if (Array.isArray(mesh.material)) {
+                mesh.material.forEach((mat: any) => mat.dispose());
+            } else {
+                mesh.material.dispose();
+            }
+        }
+    }
+    
+    // Input handling - converts DOM events to normalized coordinates
+    getMousePosition(event: MouseEvent): { x: number; y: number } {
+        const rect = this.renderer.domElement.getBoundingClientRect();
+        return {
+            x: ((event.clientX - rect.left) / rect.width) * 2 - 1,
+            y: -((event.clientY - rect.top) / rect.height) * 2 + 1
+        };
+    }
+    
+    // Raycasting for mouse interaction
+    getShelfIntersection(mouseX: number, mouseY: number): any {
+        const raycaster = new THREE.Raycaster();
+        raycaster.setFromCamera(new THREE.Vector2(mouseX, mouseY), this.camera);
+        
+        // Create virtual plane for intersection
+        const shelfConfig = this.getCurrentShelfConfig();
+        if (!shelfConfig) return null;
+        
+        const thickness = shelfConfig.materialThickness;
+        const interiorHeight = shelfConfig.height - (2 * thickness);
+        const interiorWidth = shelfConfig.width - (2 * thickness);
+        
+        const planeGeometry = new THREE.PlaneGeometry(interiorWidth, interiorHeight);
+        const planeMaterial = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0 });
+        const intersectionPlane = new THREE.Mesh(planeGeometry, planeMaterial);
+        
+        intersectionPlane.position.set(0, thickness + (interiorHeight / 2), shelfConfig.depth / 2);
+        intersectionPlane.lookAt(0, thickness + (interiorHeight / 2), shelfConfig.depth / 2 + 100);
+        
+        const intersects = raycaster.intersectObject(intersectionPlane);
+        
+        planeGeometry.dispose();
+        planeMaterial.dispose();
+        
+        if (intersects.length === 0) return null;
+        
+        const hit = intersects[0];
+        const worldPoint = hit.point;
+        
+        const positionY = worldPoint.y - thickness;
+        const positionX = worldPoint.x;
+        
+        if (positionY >= 0 && positionY <= interiorHeight && 
+            positionX >= -interiorWidth/2 && positionX <= interiorWidth/2) {
+            return {
+                positionY,
+                positionX,
+                worldPoint
+            };
+        }
+        
+        return null;
+    }
+    
+    getCurrentShelfConfig(): any {
+        // This will be set by the controller
+        return this._currentShelfConfig;
+    }
+    
+    setShelfConfig(config: any) {
+        this._currentShelfConfig = config;
+    }
+    
+    // Get divider at mouse position
+    getDividerAtPosition(mouseX: number, mouseY: number): any {
+        const raycaster = new THREE.Raycaster();
+        raycaster.setFromCamera(new THREE.Vector2(mouseX, mouseY), this.camera);
+        
+        const intersects = raycaster.intersectObjects([...this.dividerMeshes.values()]);
+        
+        if (intersects.length > 0) {
+            const mesh = intersects[0].object;
+            return {
+                id: mesh.userData.dividerId,
+                type: mesh.userData.dividerType,
+                position: mesh.userData.position,
+                mesh: mesh
+            };
+        }
+        
+        return null;
+    }
+}

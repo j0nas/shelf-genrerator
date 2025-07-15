@@ -131,73 +131,19 @@ export class CutListGenerator {
             });
         }
         
-        // Calculate vertical dividers for each section
-        const verticalDividerCounts = {};
-        
-        // Sort dividers by position
-        const sortedDividers = [...config.shelfLayout].sort((a, b) => a.position - b.position);
-        
-        sortedDividers.forEach((dividerConfig, index) => {
-            // Process spaces based on new control scheme:
-            // First divider controls both above and below spaces
-            // Other dividers only control above space
-            const spacesToProcess = [];
-            
-            if (index === 0) {
-                // First divider: handle both spaces
-                spacesToProcess.push('above', 'below');
-            } else {
-                // Other dividers: only handle above space
-                spacesToProcess.push('above');
-            }
-            
-            spacesToProcess.forEach(spaceType => {
-                const spaceConfig = dividerConfig.spaces[spaceType];
-                if (spaceConfig && spaceConfig.verticalDividers > 0) {
-                    // Calculate the height of this space
-                    let sectionHeight;
-                    
-                    if (spaceType === 'above') {
-                        if (index === sortedDividers.length - 1) {
-                            // Highest divider - space goes to the top
-                            sectionHeight = interiorHeight - dividerConfig.position;
-                        } else {
-                            // Space goes to the next horizontal divider
-                            const nextDivider = sortedDividers[index + 1];
-                            sectionHeight = nextDivider.position - dividerConfig.position;
-                        }
-                    } else { // below
-                        // For first divider, space goes to the bottom
-                        sectionHeight = dividerConfig.position;
-                    }
-                    
-                    if (sectionHeight > thickness) {
-                        const key = `${Math.round(sectionHeight * 100)}_${spaceConfig.verticalDividers}`;
-                        if (!verticalDividerCounts[key]) {
-                            verticalDividerCounts[key] = {
-                                height: sectionHeight,
-                                verticalDividers: spaceConfig.verticalDividers,
-                                quantity: 0
-                            };
-                        }
-                        verticalDividerCounts[key].quantity += spaceConfig.verticalDividers;
-                    }
-                }
-            });
-        });
-        
-        // Add vertical divider cuts
-        Object.values(verticalDividerCounts).forEach((dividerGroup, index) => {
+        // Add vertical dividers using the new simple array system
+        if (config.verticalDividers && config.verticalDividers.length > 0) {
+            // All vertical dividers are full height in the new system
             cuts.push({
-                part: `Vertical Dividers (${Math.round(dividerGroup.height * 100) / 100}" height)`,
-                quantity: dividerGroup.quantity,
+                part: `Vertical Dividers`,
+                quantity: config.verticalDividers.length,
                 width: config.depth,
-                height: dividerGroup.height,
+                height: interiorHeight,
                 thickness: thickness,
                 material: config.materialType,
-                notes: `Custom vertical dividers for compartments`
+                notes: `Full-height vertical dividers`
             });
-        });
+        }
         
         return cuts;
     }
