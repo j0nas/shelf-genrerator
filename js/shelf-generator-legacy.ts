@@ -1030,13 +1030,8 @@ export class ShelfGenerator {
 
         // Create vertical dividers (independent of horizontal dividers)
         if (config.verticalDividers) {
-            console.log('🔧 createDividers: Creating vertical dividers, count:', config.verticalDividers.length);
-            console.log('🔧 createDividers: Vertical dividers array:', config.verticalDividers);
-            
-            config.verticalDividers.forEach((verticalDividerConfig, index) => {
+            config.verticalDividers.forEach((verticalDividerConfig) => {
                 const dividerX = verticalDividerConfig.position;
-                
-                console.log(`🔧 createDividers: Creating vertical divider ${index}, position: ${dividerX}`);
                 
                 const verticalDividerGeometry = new THREE.BoxGeometry(
                     thickness,
@@ -1060,12 +1055,8 @@ export class ShelfGenerator {
                     position: verticalDividerConfig.position
                 };
                 
-                console.log(`🔧 createDividers: Vertical divider ${index} created at world position:`, verticalDivider.position);
-                
                 dividers.push(verticalDivider);
             });
-        } else {
-            console.log('🔧 createDividers: No vertical dividers in config');
         }
         
         return dividers;

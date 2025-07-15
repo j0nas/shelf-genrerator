@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { createDividerSystemService } from './divider-state-machine-v2.js';
+import { createDividerSystemService } from './divider-state-machine.js';
 import { ShelfRenderer } from './shelf-renderer.js';
 import { InputController } from './input-controller.js';
 
@@ -91,8 +91,7 @@ export class DividerSystem {
             app.currentConfig.shelfLayout = newHorizontal;
             app.currentConfig.verticalDividers = newVertical;
             
-            // Update UI controls
-            app.renderShelfLayoutControls();
+            // No UI controls to update - managed by DividerSystem
         }
     }
     
