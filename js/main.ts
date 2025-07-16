@@ -1,17 +1,13 @@
 import { DividerSystem } from './divider-system.js';
-// import { CutListGenerator } from './cutlist-generator.js'; // Removed for now
-import { UI } from './ui.js';
-import { getElement, querySelector, getInputValue, getSelectValue, getCheckboxChecked, asInput, asSelect, asChecked } from './dom-utils.js';
+import { getElement, getInputValue, getSelectValue, getCheckboxChecked } from './dom-utils.js';
 import { ShelfConfig } from './types.js';
 
 // Clean version of App using the new XState architecture
 export class App {
     dividerSystem: DividerSystem;
-    ui: UI;
     currentConfig: ShelfConfig;
 
     constructor() {
-        this.ui = new UI();
         
         this.currentConfig = {
             width: 91,

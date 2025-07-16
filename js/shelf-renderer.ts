@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { MaterialManager } from './material-manager.js';
 
 // Pure view layer - renders 3D scene based on state machine state
 export class ShelfRenderer {
@@ -148,11 +149,11 @@ export class ShelfRenderer {
         this.shelfGroup.children.forEach(child => {
             if (child.userData.type === 'shelf-structure') {
                 this.shelfGroup.remove(child);
-                this.disposeMesh(child);
+                MaterialManager.disposeMesh(child);
             }
         });
         
-        const materials = this.createMaterials(config);
+        const materials = MaterialManager.createMaterials(config.materialType);
         const shelfStructure = this.createShelfStructure(config, materials);
         shelfStructure.userData.type = 'shelf-structure';
         this.shelfGroup.add(shelfStructure);
@@ -167,13 +168,13 @@ export class ShelfRenderer {
         for (const [id, mesh] of this.dividerMeshes) {
             if (!currentDividerIds.has(id)) {
                 this.shelfGroup.remove(mesh);
-                this.disposeMesh(mesh);
+                MaterialManager.disposeMesh(mesh);
                 this.dividerMeshes.delete(id);
             }
         }
         
         // Add or update dividers
-        const materials = this.createMaterials(context.shelfConfig);
+        const materials = MaterialManager.createMaterials(context.shelfConfig.materialType);
         
         for (const divider of allDividers) {
             let mesh = this.dividerMeshes.get(divider.id);
@@ -266,13 +267,7 @@ export class ShelfRenderer {
         const depth = config.depth;
         
         const geometry = new THREE.BoxGeometry(width, thickness, depth);
-        const material = new THREE.MeshBasicMaterial({
-            color: 0x00ff00,
-            transparent: true,
-            opacity: 0.5,
-            side: THREE.DoubleSide,
-            depthTest: false
-        });
+        const material = MaterialManager.createGhostMaterial(0x00ff00);
         
         const mesh = new THREE.Mesh(geometry, material);
         mesh.renderOrder = 999;
@@ -287,13 +282,7 @@ export class ShelfRenderer {
         const depth = config.depth;
         
         const geometry = new THREE.BoxGeometry(thickness, interiorHeight, depth);
-        const material = new THREE.MeshBasicMaterial({
-            color: 0x00ff99,
-            transparent: true,
-            opacity: 0.5,
-            side: THREE.DoubleSide,
-            depthTest: false
-        });
+        const material = MaterialManager.createGhostMaterial(0x00ff99);
         
         const mesh = new THREE.Mesh(geometry, material);
         mesh.renderOrder = 999;
@@ -303,65 +292,43 @@ export class ShelfRenderer {
     }
     
     renderSelectionHighlight(selectedDivider: any) {
-        // Clear existing highlights
-        this.shelfGroup.children.forEach(child => {
-            if (child.userData.type === 'selection-highlight') {
-                this.shelfGroup.remove(child);
-                this.disposeMesh(child);
-            }
-        });
-        
-        if (!selectedDivider) return;
-        
-        const mesh = this.dividerMeshes.get(selectedDivider.id);
-        if (!mesh) return;
-        
-        // Create selection highlight
-        const highlightGeometry = mesh.geometry.clone();
-        const highlightMaterial = new THREE.MeshBasicMaterial({
-            color: 0xff0000,
-            transparent: true,
-            opacity: 0.3,
-            side: THREE.DoubleSide
-        });
-        
-        const highlight = new THREE.Mesh(highlightGeometry, highlightMaterial);
-        highlight.position.copy(mesh.position);
-        highlight.scale.setScalar(1.02); // Slightly larger
-        highlight.userData.type = 'selection-highlight';
-        highlight.renderOrder = 998;
-        
-        this.shelfGroup.add(highlight);
+        this.renderHighlight(selectedDivider, 'selection-highlight', 0xff0000, 0.3, 1.02, 998);
     }
     
     renderHoverHighlight(hoveredDivider: any) {
-        // Clear existing hover highlights
+        this.renderHighlight(hoveredDivider, 'hover-highlight', 0xffff00, 0.2, 1.01, 997);
+    }
+    
+    private renderHighlight(
+        divider: any, 
+        highlightType: string, 
+        color: number, 
+        opacity: number, 
+        scale: number, 
+        renderOrder: number
+    ) {
+        // Clear existing highlights of this type
         this.shelfGroup.children.forEach(child => {
-            if (child.userData.type === 'hover-highlight') {
+            if (child.userData.type === highlightType) {
                 this.shelfGroup.remove(child);
-                this.disposeMesh(child);
+                MaterialManager.disposeMesh(child);
             }
         });
         
-        if (!hoveredDivider) return;
+        if (!divider) return;
         
-        const mesh = this.dividerMeshes.get(hoveredDivider.id);
+        const mesh = this.dividerMeshes.get(divider.id);
         if (!mesh) return;
         
-        // Create hover highlight
+        // Create highlight
         const highlightGeometry = mesh.geometry.clone();
-        const highlightMaterial = new THREE.MeshBasicMaterial({
-            color: 0xffff00,
-            transparent: true,
-            opacity: 0.2,
-            side: THREE.DoubleSide
-        });
+        const highlightMaterial = MaterialManager.createHighlightMaterial(color, opacity);
         
         const highlight = new THREE.Mesh(highlightGeometry, highlightMaterial);
         highlight.position.copy(mesh.position);
-        highlight.scale.setScalar(1.01); // Slightly larger
-        highlight.userData.type = 'hover-highlight';
-        highlight.renderOrder = 997;
+        highlight.scale.setScalar(scale);
+        highlight.userData.type = highlightType;
+        highlight.renderOrder = renderOrder;
         
         this.shelfGroup.add(highlight);
     }
@@ -370,30 +337,6 @@ export class ShelfRenderer {
         this.controls.enabled = !isDragging;
     }
     
-    createMaterials(config: any) {
-        const colorMap = {
-            plywood: { main: 0xD2B48C, edge: 0x8B7355 },
-            mdf: { main: 0xF5DEB3, edge: 0xDEB887 },
-            pine: { main: 0xFFF8DC, edge: 0xF0E68C },
-            oak: { main: 0xDEB887, edge: 0xCD853F },
-            maple: { main: 0xFAF0E6, edge: 0xF5DEB3 }
-        };
-        
-        const colors = colorMap[config.materialType] || colorMap.plywood;
-        
-        return {
-            main: new THREE.MeshLambertMaterial({ 
-                color: colors.main,
-                transparent: true,
-                opacity: 0.9
-            }),
-            edge: new THREE.MeshLambertMaterial({ 
-                color: colors.edge,
-                transparent: true,
-                opacity: 0.95
-            })
-        };
-    }
     
     createShelfStructure(config: any, materials: any): THREE.Group {
         const group = new THREE.Group();
@@ -457,16 +400,6 @@ export class ShelfRenderer {
         this.shelfGroup.position.set(0, 0, 0);
     }
     
-    disposeMesh(mesh: any) {
-        if (mesh.geometry) mesh.geometry.dispose();
-        if (mesh.material) {
-            if (Array.isArray(mesh.material)) {
-                mesh.material.forEach((mat: any) => mat.dispose());
-            } else {
-                mesh.material.dispose();
-            }
-        }
-    }
     
     // Input handling - converts DOM events to normalized coordinates
     getMousePosition(event: MouseEvent): { x: number; y: number } {
@@ -553,36 +486,46 @@ export class ShelfRenderer {
     
     // Camera view methods
     setFrontView() {
-        const config = this.getCurrentShelfConfig();
-        const distance = config ? Math.max(config.width, config.height) * 1.5 : 100;
-        this.camera.position.set(0, 0, distance);
-        this.camera.lookAt(0, 0, 0);
-        this.controls.target.set(0, 0, 0);
-        this.controls.update();
+        this.setCameraView('front');
     }
     
     setSideView() {
-        const config = this.getCurrentShelfConfig();
-        const distance = config ? Math.max(config.depth, config.height) * 1.5 : 100;
-        this.camera.position.set(distance, 0, 0);
-        this.camera.lookAt(0, 0, 0);
-        this.controls.target.set(0, 0, 0);
-        this.controls.update();
+        this.setCameraView('side');
     }
     
     setTopView() {
-        const config = this.getCurrentShelfConfig();
-        const distance = config ? Math.max(config.width, config.depth) * 1.5 : 100;
-        this.camera.position.set(0, distance, 0);
-        this.camera.lookAt(0, 0, 0);
-        this.controls.target.set(0, 0, 0);
-        this.controls.update();
+        this.setCameraView('top');
     }
     
     setIsometricView() {
+        this.setCameraView('isometric');
+    }
+    
+    private setCameraView(viewType: 'front' | 'side' | 'top' | 'isometric') {
         const config = this.getCurrentShelfConfig();
-        const distance = config ? Math.max(config.width, config.height, config.depth) * 1.2 : 100;
-        this.camera.position.set(distance * 0.7, distance * 0.7, distance * 0.7);
+        let distance: number;
+        let position: [number, number, number];
+        
+        switch (viewType) {
+            case 'front':
+                distance = config ? Math.max(config.width, config.height) * 1.5 : 100;
+                position = [0, 0, distance];
+                break;
+            case 'side':
+                distance = config ? Math.max(config.depth, config.height) * 1.5 : 100;
+                position = [distance, 0, 0];
+                break;
+            case 'top':
+                distance = config ? Math.max(config.width, config.depth) * 1.5 : 100;
+                position = [0, distance, 0];
+                break;
+            case 'isometric':
+                distance = config ? Math.max(config.width, config.height, config.depth) * 1.2 : 100;
+                position = [distance * 0.7, distance * 0.7, distance * 0.7];
+                break;
+        }
+        
+        this.camera.position.set(...position);
         this.camera.lookAt(0, 0, 0);
         this.controls.target.set(0, 0, 0);
         this.controls.update();
