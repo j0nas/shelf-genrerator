@@ -26,7 +26,8 @@ export class MaterialManager {
                 new THREE.MeshLambertMaterial({ 
                     color: colors.edge,
                     transparent: true,
-                    opacity: 0.95
+                    opacity: 0.95,
+                    side: THREE.DoubleSide
                 })
             )
         };

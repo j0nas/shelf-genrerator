@@ -15,6 +15,9 @@ describe('MaterialManager', () => {
             expect(materials).toHaveProperty('edge');
             expect(materials.main).toBeInstanceOf(THREE.MeshLambertMaterial);
             expect(materials.edge).toBeInstanceOf(THREE.MeshLambertMaterial);
+            
+            // Edge materials should be double-sided for proper hover detection
+            expect(materials.edge.side).toBe(THREE.DoubleSide);
         });
 
         it('should fallback to plywood for unknown material types', () => {
