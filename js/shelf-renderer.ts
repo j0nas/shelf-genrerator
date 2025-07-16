@@ -203,6 +203,27 @@ export class ShelfRenderer {
             geometry = new THREE.BoxGeometry(thickness, interiorHeight, depth);
         }
         
+        // Create invisible larger collision box for better hover detection
+        const collisionPadding = Math.max(thickness * 2, 5); // At least 5cm or 2x thickness
+        const collisionGeometry = divider.type === 'horizontal' 
+            ? new THREE.BoxGeometry(interiorWidth, collisionPadding, depth)
+            : new THREE.BoxGeometry(collisionPadding, interiorHeight, depth);
+        
+        const invisibleMaterial = new THREE.MeshBasicMaterial({ 
+            transparent: true, 
+            opacity: 0, 
+            side: THREE.DoubleSide 
+        });
+        
+        const collisionMesh = new THREE.Mesh(collisionGeometry, invisibleMaterial);
+        collisionMesh.userData = {
+            type: `${divider.type}-divider`,
+            dividerId: divider.id,
+            position: divider.position,
+            dividerType: divider.type,
+            isCollisionMesh: true
+        };
+        
         const mesh = new THREE.Mesh(geometry, materials.edge.clone());
         mesh.castShadow = true;
         mesh.receiveShadow = true;
@@ -214,12 +235,24 @@ export class ShelfRenderer {
             dividerType: divider.type
         };
         
-        this.updateDividerPosition(mesh, divider, config);
+        // Create a group to hold both visible and collision meshes
+        const dividerGroup = new THREE.Group();
+        dividerGroup.add(mesh);
+        dividerGroup.add(collisionMesh);
         
-        return mesh;
+        dividerGroup.userData = {
+            type: `${divider.type}-divider`,
+            dividerId: divider.id,
+            position: divider.position,
+            dividerType: divider.type
+        };
+        
+        this.updateDividerPosition(dividerGroup, divider, config);
+        
+        return dividerGroup as any;
     }
     
-    updateDividerPosition(mesh: THREE.Mesh, divider: any, config: any) {
+    updateDividerPosition(mesh: THREE.Object3D, divider: any, config: any) {
         const thickness = config.materialThickness;
         const interiorHeight = config.height - (2 * thickness);
         
@@ -317,15 +350,25 @@ export class ShelfRenderer {
         
         if (!divider) return;
         
-        const mesh = this.dividerMeshes.get(divider.id);
-        if (!mesh) return;
+        const dividerGroup = this.dividerMeshes.get(divider.id);
+        if (!dividerGroup) return;
+        
+        // Find the visible mesh within the group (not the collision mesh)
+        let visibleMesh: THREE.Mesh | null = null;
+        dividerGroup.traverse((child: any) => {
+            if (child instanceof THREE.Mesh && !child.userData.isCollisionMesh) {
+                visibleMesh = child;
+            }
+        });
+        
+        if (!visibleMesh) return;
         
         // Create highlight
-        const highlightGeometry = mesh.geometry.clone();
+        const highlightGeometry = visibleMesh.geometry.clone();
         const highlightMaterial = MaterialManager.createHighlightMaterial(color, opacity);
         
         const highlight = new THREE.Mesh(highlightGeometry, highlightMaterial);
-        highlight.position.copy(mesh.position);
+        highlight.position.copy(dividerGroup.position);
         highlight.scale.setScalar(scale);
         highlight.userData.type = highlightType;
         highlight.renderOrder = renderOrder;
@@ -469,16 +512,34 @@ export class ShelfRenderer {
         const raycaster = new THREE.Raycaster();
         raycaster.setFromCamera(new THREE.Vector2(mouseX, mouseY), this.camera);
         
-        const intersects = raycaster.intersectObjects([...this.dividerMeshes.values()]);
+        // Recursively check all children of divider groups for intersection
+        const intersects = raycaster.intersectObjects([...this.dividerMeshes.values()], true);
         
         if (intersects.length > 0) {
-            const mesh = intersects[0].object;
-            return {
-                id: mesh.userData.dividerId,
-                type: mesh.userData.dividerType,
-                position: mesh.userData.position,
-                mesh: mesh
-            };
+            // Find the first intersection that has divider data
+            for (const intersection of intersects) {
+                const object = intersection.object;
+                
+                // Check if this object has divider userData
+                if (object.userData.dividerId) {
+                    return {
+                        id: object.userData.dividerId,
+                        type: object.userData.dividerType,
+                        position: object.userData.position,
+                        mesh: object.parent || object // Return the group if this is a child
+                    };
+                }
+                
+                // Check parent (group) userData
+                if (object.parent && object.parent.userData.dividerId) {
+                    return {
+                        id: object.parent.userData.dividerId,
+                        type: object.parent.userData.dividerType,
+                        position: object.parent.userData.position,
+                        mesh: object.parent
+                    };
+                }
+            }
         }
         
         return null;

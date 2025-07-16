@@ -49,7 +49,6 @@ interface DividerContext {
 let dividerIdCounter = 0;
 const createDividerId = () => `divider-${++dividerIdCounter}-${Date.now()}`;
 
-const calculateNearDistance = (units: string) => units === 'metric' ? 3 : 1.5;
 
 const calculateInteriorWidth = (config: DividerContext['shelfConfig']) => 
     config ? config.width - (2 * config.materialThickness) : 0;
@@ -60,20 +59,6 @@ const calculateInteriorHeight = (config: DividerContext['shelfConfig']) =>
 const findDividerById = (dividers: DividerData[], id: string) => 
     dividers.find(d => d.id === id);
 
-const isMouseNearDivider = (
-    mousePos: DividerContext['mousePosition'], 
-    divider: DividerData, 
-    units: string
-) => {
-    if (!mousePos) return false;
-    const nearDistance = calculateNearDistance(units);
-    
-    if (divider.type === 'horizontal') {
-        return Math.abs(mousePos.positionY - divider.position) <= nearDistance;
-    } else {
-        return Math.abs(mousePos.positionX - divider.position) <= nearDistance;
-    }
-};
 
 const detectGhostDivider = (
     mousePos: DividerContext['mousePosition'],
@@ -252,7 +237,7 @@ export const dividerStateMachine = createMachine<DividerContext>({
             entry: 'clearSelection',
             on: {
                 MOUSE_MOVE: {
-                    actions: ['updateMousePosition', 'updateGhostDivider', 'checkHover']
+                    actions: ['updateMousePosition', 'updateGhostDivider']
                 },
                 CLICK_EMPTY_SPACE: [
                     {
@@ -284,7 +269,7 @@ export const dividerStateMachine = createMachine<DividerContext>({
             entry: 'hideGhostDivider',
             on: {
                 MOUSE_MOVE: {
-                    actions: ['updateMousePosition', 'checkHover']
+                    actions: ['updateMousePosition']
                 },
                 CLICK_DIVIDER: {
                     target: 'selected',
@@ -307,7 +292,7 @@ export const dividerStateMachine = createMachine<DividerContext>({
             entry: 'hideGhostDivider',
             on: {
                 MOUSE_MOVE: {
-                    actions: ['updateMousePosition', 'checkHover']
+                    actions: ['updateMousePosition']
                 },
                 MOUSE_DOWN: {
                     target: 'preparingDrag',
@@ -419,22 +404,6 @@ export const dividerStateMachine = createMachine<DividerContext>({
             }
         }),
         
-        checkHover: assign({
-            hoveredDivider: (context) => {
-                if (!context.mousePosition || !context.shelfConfig) return null;
-                
-                // Check all dividers for proximity
-                const allDividers = [...context.horizontalDividers, ...context.verticalDividers];
-                
-                for (const divider of allDividers) {
-                    if (isMouseNearDivider(context.mousePosition, divider, context.shelfConfig.units)) {
-                        return divider;
-                    }
-                }
-                
-                return null;
-            }
-        }),
         
         setHoveredDivider: assign({
             hoveredDivider: (_, event) => event.divider

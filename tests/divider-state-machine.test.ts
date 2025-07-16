@@ -544,16 +544,16 @@ describe('Divider State Machine', () => {
         expect(currentContext.selectedDivider?.id).toBe(divider1.id); // First divider still selected
         expect(currentContext.hoveredDivider?.id).toBe(divider2.id); // Second divider now hovered
         
-        // Test that checkHover action works during mouse movement in selected state
+        // Test that MOUSE_MOVE alone doesn't change hover state (hover detection via raycasting)
         service.send({
             type: 'MOUSE_MOVE',
             x: 100, y: 100,
-            positionY: 36, positionX: 0 // Move near divider1 position
+            positionY: 36, positionX: 0 // Mouse movement without explicit hover event
         });
         
         currentContext = getContext(service);
-        // The checkHover action should detect we're near divider1
-        expect(currentContext.hoveredDivider?.id).toBe(divider1.id);
+        // MOUSE_MOVE alone should not change hover state - hover requires explicit HOVER_DIVIDER event from raycasting
+        expect(currentContext.hoveredDivider?.id).toBe(divider2.id); // Should still be divider2 from previous HOVER_DIVIDER event
         
         // Test unhover
         service.send({
