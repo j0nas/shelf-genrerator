@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { MaterialManager } from './material-manager.js';
+import { DistanceLabelManager } from './distance-labels.js';
 
 // Pure view layer - renders 3D scene based on state machine state
 export class ShelfRenderer {
@@ -15,6 +16,7 @@ export class ShelfRenderer {
     dividerMeshes: Map<string, THREE.Mesh> = new Map();
     ghostDivider: THREE.Mesh | null = null;
     verticalGhostDivider: THREE.Mesh | null = null;
+    distanceLabelManager: DistanceLabelManager;
     
     // Private properties
     private _currentShelfConfig: any;
@@ -30,6 +32,7 @@ export class ShelfRenderer {
         this.setupRenderer();
         this.setupControls();
         this.setupLighting();
+        this.setupDistanceLabels();
         
         // Set default view after controls are initialized
         this.setFrontView();
@@ -120,9 +123,19 @@ export class ShelfRenderer {
         this.scene.add(light2);
     }
     
+    setupDistanceLabels() {
+        this.distanceLabelManager = new DistanceLabelManager(
+            this.container,
+            this.camera,
+            this.renderer,
+            this.scene
+        );
+    }
+    
     animate() {
         requestAnimationFrame(() => this.animate());
         this.controls.update();
+        this.distanceLabelManager.updateLabelPositions();
         this.renderer.render(this.scene, this.camera);
     }
     
@@ -141,6 +154,7 @@ export class ShelfRenderer {
         this.renderGhostDivider(state.context.ghostDivider, state.context.shelfConfig);
         this.renderSelectionHighlight(state.context.selectedDivider);
         this.renderHoverHighlight(state.context.hoveredDivider);
+        this.renderDistanceLabels(state.context);
         this.updateCameraControls(state.context.isDragging);
     }
     
@@ -297,6 +311,19 @@ export class ShelfRenderer {
     
     renderHoverHighlight(hoveredDivider: any) {
         this.renderHighlight(hoveredDivider, 'hover-highlight', 0xffff00, 0.2, 1.01, 997);
+    }
+    
+    renderDistanceLabels(context: any) {
+        if (context.hoveredDivider && context.shelfConfig) {
+            this.distanceLabelManager.showDistanceLabels(
+                context.hoveredDivider,
+                context.horizontalDividers,
+                context.verticalDividers,
+                context.shelfConfig
+            );
+        } else {
+            this.distanceLabelManager.clearLabels();
+        }
     }
     
     private renderHighlight(
