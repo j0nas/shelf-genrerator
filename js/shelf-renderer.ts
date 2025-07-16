@@ -1,4 +1,3 @@
-// @ts-nocheck
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
@@ -16,6 +15,9 @@ export class ShelfRenderer {
     ghostDivider: THREE.Mesh | null = null;
     verticalGhostDivider: THREE.Mesh | null = null;
     
+    // Private properties
+    private _currentShelfConfig: any;
+    
     constructor(containerId: string) {
         this.container = document.getElementById(containerId)!;
         this.init();
@@ -27,6 +29,10 @@ export class ShelfRenderer {
         this.setupRenderer();
         this.setupControls();
         this.setupLighting();
+        
+        // Set default view after controls are initialized
+        this.setFrontView();
+        
         this.animate();
         
         window.addEventListener('resize', () => this.onWindowResize());
@@ -47,7 +53,8 @@ export class ShelfRenderer {
     setupCamera() {
         const aspect = this.container.clientWidth / this.container.clientHeight;
         this.camera = new THREE.PerspectiveCamera(75, aspect, 0.1, 1000);
-        this.camera.position.set(50, 50, 50);
+        // Initial position - will be set to front view after controls are ready
+        this.camera.position.set(0, 0, 100);
         this.camera.lookAt(0, 0, 0);
     }
     
@@ -399,11 +406,15 @@ export class ShelfRenderer {
         leftSide.position.set(-config.width / 2 + thickness / 2, config.height / 2, 0);
         leftSide.castShadow = true;
         leftSide.receiveShadow = true;
+        leftSide.userData.type = 'shelf-panel';
+        leftSide.userData.panelType = 'side';
         
         const rightSide = new THREE.Mesh(sideGeometry, materials.main.clone());
         rightSide.position.set(config.width / 2 - thickness / 2, config.height / 2, 0);
         rightSide.castShadow = true;
         rightSide.receiveShadow = true;
+        rightSide.userData.type = 'shelf-panel';
+        rightSide.userData.panelType = 'side';
         
         // Create top and bottom
         const shelfGeometry = new THREE.BoxGeometry(config.width, thickness, config.depth);
@@ -412,11 +423,15 @@ export class ShelfRenderer {
         topShelf.position.set(0, config.height - thickness / 2, 0);
         topShelf.castShadow = true;
         topShelf.receiveShadow = true;
+        topShelf.userData.type = 'shelf-panel';
+        topShelf.userData.panelType = 'top';
         
         const bottomShelf = new THREE.Mesh(shelfGeometry, materials.main.clone());
         bottomShelf.position.set(0, thickness / 2, 0);
         bottomShelf.castShadow = true;
         bottomShelf.receiveShadow = true;
+        bottomShelf.userData.type = 'shelf-panel';
+        bottomShelf.userData.panelType = 'bottom';
         
         group.add(leftSide);
         group.add(rightSide);
@@ -430,6 +445,8 @@ export class ShelfRenderer {
             backPanel.position.set(0, config.height / 2, -config.depth / 2 + thickness / 2);
             backPanel.castShadow = true;
             backPanel.receiveShadow = true;
+            backPanel.userData.type = 'shelf-panel';
+            backPanel.userData.panelType = 'back';
             group.add(backPanel);
         }
         
@@ -532,5 +549,59 @@ export class ShelfRenderer {
         }
         
         return null;
+    }
+    
+    // Camera view methods
+    setFrontView() {
+        const config = this.getCurrentShelfConfig();
+        const distance = config ? Math.max(config.width, config.height) * 1.5 : 100;
+        this.camera.position.set(0, 0, distance);
+        this.camera.lookAt(0, 0, 0);
+        this.controls.target.set(0, 0, 0);
+        this.controls.update();
+    }
+    
+    setSideView() {
+        const config = this.getCurrentShelfConfig();
+        const distance = config ? Math.max(config.depth, config.height) * 1.5 : 100;
+        this.camera.position.set(distance, 0, 0);
+        this.camera.lookAt(0, 0, 0);
+        this.controls.target.set(0, 0, 0);
+        this.controls.update();
+    }
+    
+    setTopView() {
+        const config = this.getCurrentShelfConfig();
+        const distance = config ? Math.max(config.width, config.depth) * 1.5 : 100;
+        this.camera.position.set(0, distance, 0);
+        this.camera.lookAt(0, 0, 0);
+        this.controls.target.set(0, 0, 0);
+        this.controls.update();
+    }
+    
+    setIsometricView() {
+        const config = this.getCurrentShelfConfig();
+        const distance = config ? Math.max(config.width, config.height, config.depth) * 1.2 : 100;
+        this.camera.position.set(distance * 0.7, distance * 0.7, distance * 0.7);
+        this.camera.lookAt(0, 0, 0);
+        this.controls.target.set(0, 0, 0);
+        this.controls.update();
+    }
+    
+    // Check if mouse is over shelf panels (to disable ghost dividers)
+    isMouseOverPanel(mouseX: number, mouseY: number): boolean {
+        const raycaster = new THREE.Raycaster();
+        raycaster.setFromCamera(new THREE.Vector2(mouseX, mouseY), this.camera);
+        
+        // Get all shelf panel objects
+        const shelfPanels: THREE.Object3D[] = [];
+        this.shelfGroup.traverse((child) => {
+            if (child.userData.type === 'shelf-panel' && child instanceof THREE.Mesh) {
+                shelfPanels.push(child);
+            }
+        });
+        
+        const intersects = raycaster.intersectObjects(shelfPanels);
+        return intersects.length > 0;
     }
 }

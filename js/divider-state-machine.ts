@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { createMachine, interpret, assign } from 'xstate';
 
 // Types for our state machine
@@ -34,7 +33,7 @@ interface DividerContext {
     dragStartDividerPosition: number | null;
     
     // Mouse state
-    mousePosition: { x: number; y: number; positionY: number; positionX: number } | null;
+    mousePosition: { x: number; y: number; positionY: number; positionX: number; isOverPanel?: boolean } | null;
     
     // Shelf configuration (for calculations)
     shelfConfig: {
@@ -47,7 +46,8 @@ interface DividerContext {
 }
 
 // Helper functions for business logic
-const createDividerId = () => Date.now().toString();
+let dividerIdCounter = 0;
+const createDividerId = () => `divider-${++dividerIdCounter}-${Date.now()}`;
 
 const calculateNearDistance = (units: string) => units === 'metric' ? 3 : 1.5;
 
@@ -129,10 +129,19 @@ const detectHorizontalGhost = (
         if (mousePos.positionY >= bottomBound && mousePos.positionY <= topBound) {
             const sectionHeight = topBound - bottomBound;
             const centerPosition = bottomBound + (sectionHeight / 2);
-            const canAdd = sectionHeight >= minSectionSize * 2;
+            
+            // Check section size and collision with boundaries
+            const sectionSizeOk = sectionHeight >= minSectionSize * 2;
+            const minGap = config.units === 'metric' ? 2 : 0.75;
+            
+            // Check if mouse position would be too close to existing dividers
+            const tooCloseToBottom = (mousePos.positionY - bottomBound) < minGap;
+            const tooCloseToTop = (topBound - mousePos.positionY) < minGap;
+            
+            const canAdd = sectionSizeOk && !tooCloseToBottom && !tooCloseToTop;
             
             return {
-                position: centerPosition,
+                position: mousePos.positionY,
                 type: 'horizontal',
                 canAdd,
                 visible: canAdd
@@ -162,11 +171,20 @@ const detectVerticalGhost = (
         if (mousePos.positionX >= leftBound && mousePos.positionX <= rightBound) {
             const sectionWidth = rightBound - leftBound;
             const centerPosition = leftBound + (sectionWidth / 2);
-            const canAdd = sectionWidth >= minSectionSize * 2;
+            
+            // Check section size and collision with boundaries
+            const sectionSizeOk = sectionWidth >= minSectionSize * 2;
+            const minGap = config.units === 'metric' ? 2 : 0.75;
+            
+            // Check if mouse position would be too close to existing dividers
+            const tooCloseToLeft = (mousePos.positionX - leftBound) < minGap;
+            const tooCloseToRight = (rightBound - mousePos.positionX) < minGap;
+            
+            const canAdd = sectionSizeOk && !tooCloseToLeft && !tooCloseToRight;
             
             return {
-                position: centerPosition,
-                positionX: centerPosition,
+                position: mousePos.positionX,
+                positionX: mousePos.positionX,
                 type: 'vertical',
                 canAdd,
                 visible: canAdd
@@ -242,6 +260,10 @@ export const dividerStateMachine = createMachine<DividerContext>({
                         actions: 'addDivider'
                     }
                 ],
+                CLICK_DIVIDER: {
+                    target: 'selected',
+                    actions: 'selectDivider'
+                },
                 HOVER_DIVIDER: {
                     target: 'hovering',
                     actions: 'setHoveredDivider'
@@ -259,9 +281,10 @@ export const dividerStateMachine = createMachine<DividerContext>({
             }
         },
         hovering: {
+            entry: 'hideGhostDivider',
             on: {
                 MOUSE_MOVE: {
-                    actions: ['updateMousePosition', 'updateGhostDivider', 'checkHover']
+                    actions: ['updateMousePosition', 'checkHover']
                 },
                 CLICK_DIVIDER: {
                     target: 'selected',
@@ -273,6 +296,10 @@ export const dividerStateMachine = createMachine<DividerContext>({
                 },
                 UPDATE_SHELF_CONFIG: {
                     actions: 'updateShelfConfig'
+                },
+                RESET: {
+                    target: 'normal',
+                    actions: 'resetSystem'
                 }
             }
         },
@@ -280,11 +307,20 @@ export const dividerStateMachine = createMachine<DividerContext>({
             entry: 'hideGhostDivider',
             on: {
                 MOUSE_MOVE: {
-                    actions: 'updateMousePosition'
+                    actions: ['updateMousePosition', 'checkHover']
                 },
                 MOUSE_DOWN: {
                     target: 'preparingDrag',
                     actions: 'prepareDrag'
+                },
+                CLICK_DIVIDER: {
+                    actions: 'selectDivider'
+                },
+                HOVER_DIVIDER: {
+                    actions: 'setHoveredDivider'
+                },
+                UNHOVER: {
+                    actions: 'clearHover'
                 },
                 CLICK_DELETE: {
                     target: 'normal',
@@ -296,6 +332,10 @@ export const dividerStateMachine = createMachine<DividerContext>({
                 },
                 UPDATE_SHELF_CONFIG: {
                     actions: 'updateShelfConfig'
+                },
+                RESET: {
+                    target: 'normal',
+                    actions: 'resetSystem'
                 }
             }
         },
@@ -313,6 +353,10 @@ export const dividerStateMachine = createMachine<DividerContext>({
                 ],
                 MOUSE_UP: {
                     target: 'selected'
+                },
+                RESET: {
+                    target: 'normal',
+                    actions: 'resetSystem'
                 }
             }
         },
@@ -326,6 +370,10 @@ export const dividerStateMachine = createMachine<DividerContext>({
                 MOUSE_UP: {
                     target: 'selected',
                     actions: 'commitDrag'
+                },
+                RESET: {
+                    target: 'normal',
+                    actions: 'resetSystem'
                 }
             }
         }
@@ -336,9 +384,9 @@ export const dividerStateMachine = createMachine<DividerContext>({
             return context.ghostDivider?.canAdd === true;
         },
         dragThresholdExceeded: (context, event) => {
-            if (!context.dragStartPosition || !context.mousePosition) return false;
-            const dx = context.mousePosition.x - context.dragStartPosition.x;
-            const dy = context.mousePosition.y - context.dragStartPosition.y;
+            if (!context.dragStartPosition || !event.x || !event.y) return false;
+            const dx = event.x - context.dragStartPosition.x;
+            const dy = event.y - context.dragStartPosition.y;
             return Math.sqrt(dx * dx + dy * dy) > 5;
         }
     },
@@ -352,13 +400,15 @@ export const dividerStateMachine = createMachine<DividerContext>({
                 x: event.x,
                 y: event.y,
                 positionY: event.positionY,
-                positionX: event.positionX
+                positionX: event.positionX,
+                isOverPanel: event.isOverPanel || false
             })
         }),
         
         updateGhostDivider: assign({
             ghostDivider: (context) => {
                 if (context.selectedDivider) return null; // No ghost when selected
+                if (context.mousePosition?.isOverPanel) return null; // No ghost when over panels
                 
                 return detectGhostDivider(
                     context.mousePosition,

@@ -207,6 +207,11 @@ button:active {
     background: #555;
 }
 
+.viewer-controls button.active {
+    background: #8B4513 !important;
+    opacity: 1 !important;
+}
+
 .cutlist-panel {
     background: white;
     border-radius: 8px;

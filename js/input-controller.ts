@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Pure input controller - converts DOM events to state machine events
 export class InputController {
     private renderer: any;
@@ -29,6 +28,9 @@ export class InputController {
         // Check if hovering over existing divider
         const dividerAtMouse = this.renderer.getDividerAtPosition(mousePos.x, mousePos.y);
         
+        // Check if mouse is over a shelf panel (to disable ghost dividers)
+        const isOverPanel = this.renderer.isMouseOverPanel(mousePos.x, mousePos.y);
+        
         if (dividerAtMouse) {
             this.stateMachine.send({
                 type: 'HOVER_DIVIDER',
@@ -48,7 +50,8 @@ export class InputController {
             x: event.clientX,
             y: event.clientY,
             positionY: intersection.positionY,
-            positionX: intersection.positionX
+            positionX: intersection.positionX,
+            isOverPanel: isOverPanel
         });
     }
     
@@ -68,6 +71,7 @@ export class InputController {
         const dividerAtMouse = this.renderer.getDividerAtPosition(mousePos.x, mousePos.y);
         
         if (dividerAtMouse) {
+            // Clicking on a divider - always select it (even if another is selected)
             this.stateMachine.send({
                 type: 'CLICK_DIVIDER',
                 divider: {
@@ -81,6 +85,18 @@ export class InputController {
             const currentState = this.stateMachine.getSnapshot();
             if (currentState.value === 'selected' && this.isDeleteButtonClick(event)) {
                 this.stateMachine.send({ type: 'CLICK_DELETE' });
+                return;
+            }
+            
+            // Check if mouse is over a shelf panel
+            const mousePos = this.renderer.getMousePosition(event);
+            const isOverPanel = this.renderer.isMouseOverPanel(mousePos.x, mousePos.y);
+            
+            if (isOverPanel) {
+                // Clicking on shelf panel - deselect any selected divider
+                if (currentState.value === 'selected') {
+                    this.stateMachine.send({ type: 'CLICK_ELSEWHERE' });
+                }
                 return;
             }
             

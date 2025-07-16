@@ -8,11 +8,11 @@
 import { vi } from 'vitest';
 
 // Mock WebGL context
-global.WebGLRenderingContext = vi.fn();
-global.WebGL2RenderingContext = vi.fn();
+(global as any).WebGLRenderingContext = vi.fn();
+(global as any).WebGL2RenderingContext = vi.fn();
 
 // Mock Canvas and WebGL for Three.js
-HTMLCanvasElement.prototype.getContext = vi.fn((contextType) => {
+HTMLCanvasElement.prototype.getContext = vi.fn((contextType: string) => {
   if (contextType === 'webgl' || contextType === 'webgl2') {
     return {
       canvas: {},
@@ -73,11 +73,11 @@ HTMLCanvasElement.prototype.getContext = vi.fn((contextType) => {
 });
 
 // Mock requestAnimationFrame
-global.requestAnimationFrame = vi.fn((cb) => setTimeout(cb, 16));
-global.cancelAnimationFrame = vi.fn();
+(global as any).requestAnimationFrame = vi.fn((cb: FrameRequestCallback) => setTimeout(cb, 16));
+(global as any).cancelAnimationFrame = vi.fn();
 
 // Mock ResizeObserver
-global.ResizeObserver = vi.fn().mockImplementation(() => ({
+(global as any).ResizeObserver = vi.fn().mockImplementation(() => ({
   observe: vi.fn(),
   unobserve: vi.fn(),
   disconnect: vi.fn(),
@@ -85,7 +85,7 @@ global.ResizeObserver = vi.fn().mockImplementation(() => ({
 
 // Suppress console.log during tests (except for our ghost debugging)
 const originalLog = console.log;
-console.log = vi.fn((...args) => {
+console.log = vi.fn((...args: any[]) => {
   const message = args.join(' ');
   // Only log test-related messages and ghost debugging
   if (message.includes('👻') || message.includes('test') || message.includes('Test')) {
@@ -94,6 +94,6 @@ console.log = vi.fn((...args) => {
 });
 
 // Mock performance.now
-global.performance = {
+(global as any).performance = {
   now: vi.fn(() => Date.now())
 };

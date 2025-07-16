@@ -15,7 +15,6 @@ export interface ShelfConfig {
     backPanel: boolean;
     edgeTreatment: string;
     woodGrain: boolean;
-    units: 'imperial' | 'metric';
 }
 
 export interface HorizontalDividerInfo {
@@ -49,30 +48,6 @@ export interface SectionInfo {
     heightInches: number;
 }
 
-// Cut list interfaces
-export interface CutListPiece {
-    name: string;
-    width: number;
-    height: number;
-    depth: number;
-    quantity: number;
-    materialType: string;
-    notes?: string;
-}
-
-export interface CutListData {
-    pieces: CutListPiece[];
-    materialSummary: MaterialSummary[];
-    totalBoardFeet?: number;
-    estimatedCost?: number;
-}
-
-export interface MaterialSummary {
-    materialType: string;
-    totalPieces: number;
-    totalBoardFeet: number;
-    estimatedCost: number;
-}
 
 // UI state interfaces
 export interface ViewState {
@@ -90,11 +65,9 @@ export interface Ray3D {
 export interface IntersectionResult {
     position: number;
     worldPoint: THREE.Vector3;
-    units: 'imperial' | 'metric';
 }
 
 // Event handler types
-export type UnitChangeHandler = (units: 'imperial' | 'metric') => void;
 export type DimensionChangeHandler = (dimension: keyof ShelfConfig, value: number) => void;
 export type MaterialChangeHandler = (property: string, value: any) => void;
 
