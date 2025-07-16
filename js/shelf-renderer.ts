@@ -242,6 +242,11 @@ export class ShelfRenderer {
         } else {
             mesh.position.set(divider.position, thickness + (interiorHeight / 2), 0);
         }
+        
+        // Update userData position to keep it in sync with the logical position
+        if (mesh.userData) {
+            mesh.userData.position = divider.position;
+        }
     }
     
     renderGhostDivider(ghostDivider: any, config: any) {

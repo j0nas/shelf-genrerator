@@ -178,6 +178,7 @@ export class DistanceLabelManager {
             leftType = 'carcass';
         }
         
+        
         // Calculate 3D positions for labels
         const worldX = hoveredPosition;
         const worldY = thickness + (interiorHeight / 2);
