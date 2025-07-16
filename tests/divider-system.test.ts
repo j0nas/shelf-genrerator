@@ -29,7 +29,8 @@ vitest.mock('../js/shelf-renderer.js', () => ({
 
 vitest.mock('../js/input-controller.js', () => ({
     InputController: vitest.fn(() => ({
-        setupKeyboardShortcuts: vitest.fn()
+        setupKeyboardShortcuts: vitest.fn(),
+        setRenderCallback: vitest.fn()
     }))
 }));
 

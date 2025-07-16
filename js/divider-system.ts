@@ -15,6 +15,7 @@ export class DividerSystem {
     this.inputController = new InputController(this.renderer, this.stateMachine);
 
     this.setupStateMachine();
+    this.setupInputCallbacks();
     this.start();
   }
 
@@ -30,8 +31,17 @@ export class DividerSystem {
       this.syncToExternalState(state);
     });
 
+
     // Add keyboard shortcuts
     this.inputController.setupKeyboardShortcuts();
+  }
+
+  setupInputCallbacks() {
+    // Set up render callback for live drag updates
+    this.inputController.setRenderCallback(() => {
+      const currentState = this.stateMachine.getSnapshot();
+      this.renderer.render(currentState);
+    });
   }
 
   start() {

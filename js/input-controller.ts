@@ -3,11 +3,16 @@ export class InputController {
     private renderer: any;
     private stateMachine: any;
     private justFinishedDragging = false;
+    private renderCallback?: () => void;
     
     constructor(renderer: any, stateMachine: any) {
         this.renderer = renderer;
         this.stateMachine = stateMachine;
         this.setupEventListeners();
+    }
+    
+    setRenderCallback(callback: () => void) {
+        this.renderCallback = callback;
     }
     
     setupEventListeners() {
@@ -53,6 +58,12 @@ export class InputController {
             positionX: intersection.positionX,
             isOverPanel: isOverPanel
         });
+        
+        // Trigger render during dragging for live updates
+        const currentState = this.stateMachine.getSnapshot();
+        if (currentState.value === 'dragging' && this.renderCallback) {
+            this.renderCallback();
+        }
     }
     
     onClick(event: MouseEvent) {
