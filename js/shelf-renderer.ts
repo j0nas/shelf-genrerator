@@ -319,9 +319,13 @@ export class ShelfRenderer {
     }
     
     renderDistanceLabels(context: any) {
-        if (context.hoveredDivider && context.shelfConfig) {
+        // Show distance labels for hovered divider OR selected divider during drag
+        const targetDivider = context.hoveredDivider || 
+            (context.isDragging && context.selectedDivider ? context.selectedDivider : null);
+            
+        if (targetDivider && context.shelfConfig) {
             this.distanceLabelManager.showDistanceLabels(
-                context.hoveredDivider,
+                targetDivider,
                 context.horizontalDividers,
                 context.verticalDividers,
                 context.shelfConfig
