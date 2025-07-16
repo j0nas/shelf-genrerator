@@ -328,7 +328,8 @@ export class ShelfRenderer {
                 targetDivider,
                 context.horizontalDividers,
                 context.verticalDividers,
-                context.shelfConfig
+                context.shelfConfig,
+                context.isDragging && context.selectedDivider === targetDivider
             );
         } else {
             this.distanceLabelManager.clearLabels();

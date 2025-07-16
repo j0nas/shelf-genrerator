@@ -207,16 +207,25 @@ export class DistanceLabelManager {
         hoveredDivider: DividerData,
         horizontalDividers: DividerData[],
         verticalDividers: DividerData[],
-        config: ShelfConfig
+        config: ShelfConfig,
+        isDragging: boolean = false
     ) {
         this.clearLabels();
         
         let distances: Array<{distance: number, position: THREE.Vector3, toType: 'divider' | 'carcass', toName: string}>;
         
         if (hoveredDivider.type === 'horizontal') {
-            distances = this.calculateHorizontalDividerDistances(hoveredDivider, horizontalDividers, config);
+            // During dragging, use the live position but filter out the dragged divider from calculations
+            const filteredHorizontalDividers = isDragging 
+                ? horizontalDividers.filter(d => d.id !== hoveredDivider.id)
+                : horizontalDividers;
+            distances = this.calculateHorizontalDividerDistances(hoveredDivider, filteredHorizontalDividers, config);
         } else {
-            distances = this.calculateVerticalDividerDistances(hoveredDivider, verticalDividers, config);
+            // During dragging, use the live position but filter out the dragged divider from calculations  
+            const filteredVerticalDividers = isDragging 
+                ? verticalDividers.filter(d => d.id !== hoveredDivider.id)
+                : verticalDividers;
+            distances = this.calculateVerticalDividerDistances(hoveredDivider, filteredVerticalDividers, config);
         }
         
         distances.forEach((dist, index) => {
