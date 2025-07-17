@@ -21,8 +21,11 @@ export class DividerSystem {
 
   setupStateMachine() {
     // Subscribe to state changes and re-render
-    this.stateMachine.onTransition((state: any) => {
-      console.log(`🎯 State: ${state.value}`);
+    this.stateMachine.subscribe((state: any) => {
+      console.log(`🎯 State: ${state.value}`, {
+        isDragging: state.context.isDragging,
+        selectedDividerPosition: state.context.selectedDivider?.position
+      });
 
       // Pure view update - renderer is a function of state
       this.renderer.render(state);
@@ -30,7 +33,6 @@ export class DividerSystem {
       // Sync external state (for legacy compatibility)
       this.syncToExternalState(state);
     });
-
 
     // Add keyboard shortcuts
     this.inputController.setupKeyboardShortcuts();
@@ -153,11 +155,9 @@ export class DividerSystem {
     console.log("🐛 Debug mode enabled");
 
     // Log all state transitions
-    this.stateMachine.onTransition((state: any, event: any) => {
+    this.stateMachine.subscribe((state: any) => {
       console.log("🎯 State Transition:", {
-        from: state.history?.value || "initial",
         to: state.value,
-        event: event.type,
         context: state.context,
       });
     });

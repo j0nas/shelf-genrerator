@@ -209,6 +209,15 @@ describe('Multiple Drag Operations Bug', () => {
             isOverPanel: false
         });
         
+        // Send another MOUSE_MOVE to actually update the drag position
+        // (the first MOUSE_MOVE triggers the transition to dragging state)
+        service.send({
+            type: 'MOUSE_MOVE',
+            x: 107, y: 107,
+            positionY: 60, positionX: 0,
+            isOverPanel: false
+        });
+        
         state = service.getSnapshot();
         
         // Debug the exact state

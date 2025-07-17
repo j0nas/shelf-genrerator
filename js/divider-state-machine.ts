@@ -1,4 +1,4 @@
-import { createMachine, interpret, assign } from 'xstate';
+import { createMachine, createActor, assign } from 'xstate';
 
 // Types for our state machine
 interface DividerData {
@@ -44,6 +44,21 @@ interface DividerContext {
         units: 'metric' | 'imperial';
     } | null;
 }
+
+// Event types for XState v5
+type DividerEvent = 
+    | { type: 'MOUSE_MOVE'; x: number; y: number; positionY: number; positionX: number; isOverPanel?: boolean }
+    | { type: 'CLICK_EMPTY_SPACE'; positionY: number; positionX: number }
+    | { type: 'CLICK_DIVIDER'; divider: DividerData }
+    | { type: 'HOVER_DIVIDER'; divider: DividerData }
+    | { type: 'UNHOVER' }
+    | { type: 'MOUSE_DOWN'; x: number; y: number }
+    | { type: 'MOUSE_UP' }
+    | { type: 'CLICK_DELETE' }
+    | { type: 'CLICK_ELSEWHERE' }
+    | { type: 'UPDATE_SHELF_CONFIG'; config: DividerContext['shelfConfig'] }
+    | { type: 'ADD_EXISTING_DIVIDER'; divider: DividerData }
+    | { type: 'RESET' };
 
 // Helper functions for business logic
 let dividerIdCounter = 0;
@@ -211,9 +226,12 @@ const constrainDividerPosition = (
 };
 
 // The comprehensive state machine
-export const dividerStateMachine = createMachine<DividerContext>({
+export const dividerStateMachine = createMachine({
+    types: {} as {
+        context: DividerContext;
+        events: DividerEvent;
+    },
     id: 'dividerSystem',
-    predictableActionArguments: true,
     initial: 'normal',
     context: {
         horizontalDividers: [],
@@ -236,7 +254,7 @@ export const dividerStateMachine = createMachine<DividerContext>({
                 },
                 CLICK_EMPTY_SPACE: [
                     {
-                        cond: 'canAddDivider',
+                        guard: 'canAddDivider',
                         actions: 'addDivider'
                     }
                 ],
@@ -323,7 +341,7 @@ export const dividerStateMachine = createMachine<DividerContext>({
             on: {
                 MOUSE_MOVE: [
                     {
-                        cond: 'dragThresholdExceeded',
+                        guard: 'dragThresholdExceeded',
                         target: 'dragging',
                         actions: ['updateMousePosition', 'startDrag']
                     },
@@ -344,11 +362,9 @@ export const dividerStateMachine = createMachine<DividerContext>({
             entry: 'disableCameraControls',
             exit: 'enableCameraControls',
             on: {
-                MOUSE_MOVE: [
-                    {
-                        actions: ['updateMousePosition', 'updateDragPosition']
-                    }
-                ],
+                MOUSE_MOVE: {
+                    actions: ['updateMousePosition', 'updateDragPosition']
+                },
                 MOUSE_UP: {
                     target: 'selected',
                     actions: 'commitDrag'
@@ -362,11 +378,11 @@ export const dividerStateMachine = createMachine<DividerContext>({
     }
 }, {
     guards: {
-        canAddDivider: (context, event) => {
+        canAddDivider: ({ context }) => {
             return context.ghostDivider?.canAdd === true;
         },
-        dragThresholdExceeded: (context, event) => {
-            if (!context.dragStartPosition || !event.x || !event.y) return false;
+        dragThresholdExceeded: ({ context, event }) => {
+            if (!context.dragStartPosition || !('x' in event) || !('y' in event)) return false;
             const dx = event.x - context.dragStartPosition.x;
             const dy = event.y - context.dragStartPosition.y;
             return Math.sqrt(dx * dx + dy * dy) > 5;
@@ -374,21 +390,26 @@ export const dividerStateMachine = createMachine<DividerContext>({
     },
     actions: {
         updateShelfConfig: assign({
-            shelfConfig: (_, event) => event.config
+            shelfConfig: ({ event }) => event.type === 'UPDATE_SHELF_CONFIG' ? event.config : null
         }),
         
         updateMousePosition: assign({
-            mousePosition: (_, event) => ({
-                x: event.x,
-                y: event.y,
-                positionY: event.positionY,
-                positionX: event.positionX,
-                isOverPanel: event.isOverPanel || false
-            })
+            mousePosition: ({ event }) => {
+                if (event.type === 'MOUSE_MOVE') {
+                    return {
+                        x: event.x,
+                        y: event.y,
+                        positionY: event.positionY,
+                        positionX: event.positionX,
+                        isOverPanel: event.isOverPanel || false
+                    };
+                }
+                return null;
+            }
         }),
         
         updateGhostDivider: assign({
-            ghostDivider: (context) => {
+            ghostDivider: ({ context }) => {
                 if (context.selectedDivider) return null; // No ghost when selected
                 if (context.mousePosition?.isOverPanel) return null; // No ghost when over panels
                 
@@ -403,7 +424,7 @@ export const dividerStateMachine = createMachine<DividerContext>({
         
         
         setHoveredDivider: assign({
-            hoveredDivider: (_, event) => event.divider
+            hoveredDivider: ({ event }) => event.type === 'HOVER_DIVIDER' ? event.divider : null
         }),
         
         clearHover: assign({
@@ -411,7 +432,7 @@ export const dividerStateMachine = createMachine<DividerContext>({
         }),
         
         selectDivider: assign({
-            selectedDivider: (_, event) => event.divider,
+            selectedDivider: ({ event }) => event.type === 'CLICK_DIVIDER' ? event.divider : null,
             hoveredDivider: null
         }),
         
@@ -424,8 +445,8 @@ export const dividerStateMachine = createMachine<DividerContext>({
             ghostDivider: null
         }),
         
-        addDivider: assign((context, event) => {
-            if (!context.ghostDivider) return context;
+        addDivider: assign(({ context }) => {
+            if (!context.ghostDivider) return {};
             
             const newDivider: DividerData = {
                 id: createDividerId(),
@@ -437,13 +458,11 @@ export const dividerStateMachine = createMachine<DividerContext>({
             
             if (context.ghostDivider.type === 'horizontal') {
                 return {
-                    ...context,
                     horizontalDividers: [...context.horizontalDividers, newDivider],
                     ghostDivider: null
                 };
             } else {
                 return {
-                    ...context,
                     verticalDividers: [...context.verticalDividers, newDivider],
                     ghostDivider: null
                 };
@@ -451,16 +470,21 @@ export const dividerStateMachine = createMachine<DividerContext>({
         }),
         
         prepareDrag: assign({
-            dragStartPosition: (_, event) => ({ x: event.x, y: event.y }),
-            dragStartDividerPosition: (context) => context.selectedDivider?.position || null
+            dragStartPosition: ({ event }) => {
+                if (event.type === 'MOUSE_DOWN') {
+                    return { x: event.x, y: event.y };
+                }
+                return null;
+            },
+            dragStartDividerPosition: ({ context }) => context.selectedDivider?.position || null
         }),
         
         startDrag: assign({
             isDragging: true
         }),
         
-        updateDragPosition: assign((context, event) => {
-            if (!context.selectedDivider || event.positionY === undefined || event.positionX === undefined) return context;
+        updateDragPosition: assign(({ context, event }) => {
+            if (!context.selectedDivider || event.type !== 'MOUSE_MOVE') return {};
             
             const newPosition = context.selectedDivider.type === 'horizontal' 
                 ? event.positionY 
@@ -482,17 +506,15 @@ export const dividerStateMachine = createMachine<DividerContext>({
             
             if (context.selectedDivider.type === 'horizontal') {
                 return {
-                    ...context,
                     selectedDivider: updatedDivider,
-                    horizontalDividers: context.horizontalDividers.map(d => 
+                    horizontalDividers: context.horizontalDividers.map((d: DividerData) => 
                         d.id === updatedDivider.id ? updatedDivider : d
                     )
                 };
             } else {
                 return {
-                    ...context,
                     selectedDivider: updatedDivider,
-                    verticalDividers: context.verticalDividers.map(d => 
+                    verticalDividers: context.verticalDividers.map((d: DividerData) => 
                         d.id === updatedDivider.id ? updatedDivider : d
                     )
                 };
@@ -505,18 +527,16 @@ export const dividerStateMachine = createMachine<DividerContext>({
             dragStartDividerPosition: null
         }),
         
-        deleteDivider: assign((context) => {
-            if (!context.selectedDivider) return context;
+        deleteDivider: assign(({ context }) => {
+            if (!context.selectedDivider) return {};
             
             if (context.selectedDivider.type === 'horizontal') {
                 return {
-                    ...context,
                     horizontalDividers: context.horizontalDividers.filter(d => d.id !== context.selectedDivider!.id),
                     selectedDivider: null
                 };
             } else {
                 return {
-                    ...context,
                     verticalDividers: context.verticalDividers.filter(d => d.id !== context.selectedDivider!.id),
                     selectedDivider: null
                 };
@@ -532,18 +552,17 @@ export const dividerStateMachine = createMachine<DividerContext>({
         },
         
         
-        
-        addExistingDivider: assign((context, event) => {
+        addExistingDivider: assign(({ context, event }) => {
+            if (event.type !== 'ADD_EXISTING_DIVIDER') return {};
+            
             const divider = event.divider;
             
             if (divider.type === 'horizontal') {
                 return {
-                    ...context,
                     horizontalDividers: [...context.horizontalDividers, divider]
                 };
             } else {
                 return {
-                    ...context,
                     verticalDividers: [...context.verticalDividers, divider]
                 };
             }
@@ -563,4 +582,4 @@ export const dividerStateMachine = createMachine<DividerContext>({
     }
 });
 
-export const createDividerSystemService = () => interpret(dividerStateMachine);
+export const createDividerSystemService = () => createActor(dividerStateMachine);

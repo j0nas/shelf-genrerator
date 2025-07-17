@@ -115,19 +115,6 @@
         </div>
     </div>
     
-    <script>
-        // Define process for XState compatibility
-        window.process = { env: { NODE_ENV: 'development' } };
-    </script>
-    <script type="importmap">
-    {
-        "imports": {
-            "three": "https://unpkg.com/three@0.157.0/build/three.module.js",
-            "three/addons/": "https://unpkg.com/three@0.157.0/examples/jsm/",
-            "xstate": "./node_modules/xstate/es/index.js"
-        }
-    }
-    </script>
-    <script type="module" src="dist/js/main.js"></script>
+    <script type="module" src="js/main.ts"></script>
 </body>
 </html>
