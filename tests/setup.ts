@@ -1,11 +1,11 @@
 /**
  * Test Setup File
- * 
+ *
  * This file sets up the global test environment for all tests.
  * It mocks the necessary browser APIs and DOM elements.
  */
 
-import { vi } from 'vitest';
+import { vi } from "vitest";
 
 // Mock WebGL context
 (global as any).WebGLRenderingContext = vi.fn();
@@ -13,7 +13,7 @@ import { vi } from 'vitest';
 
 // Mock Canvas and WebGL for Three.js
 HTMLCanvasElement.prototype.getContext = vi.fn((contextType: string) => {
-  if (contextType === 'webgl' || contextType === 'webgl2') {
+  if (contextType === "webgl" || contextType === "webgl2") {
     return {
       canvas: {},
       drawingBufferWidth: 800,
@@ -66,7 +66,7 @@ HTMLCanvasElement.prototype.getContext = vi.fn((contextType: string) => {
       COLOR_BUFFER_BIT: 16384,
       DEPTH_BUFFER_BIT: 256,
       DEPTH_TEST: 2929,
-      LEQUAL: 515
+      LEQUAL: 515,
     };
   }
   return null;
@@ -86,14 +86,14 @@ HTMLCanvasElement.prototype.getContext = vi.fn((contextType: string) => {
 // Suppress console.log during tests (except for our ghost debugging)
 const originalLog = console.log;
 console.log = vi.fn((...args: any[]) => {
-  const message = args.join(' ');
+  const message = args.join(" ");
   // Only log test-related messages and ghost debugging
-  if (message.includes('👻') || message.includes('test') || message.includes('Test')) {
+  if (message.includes("👻") || message.includes("test") || message.includes("Test")) {
     originalLog.apply(console, args);
   }
 });
 
 // Mock performance.now
 (global as any).performance = {
-  now: vi.fn(() => Date.now())
+  now: vi.fn(() => Date.now()),
 };

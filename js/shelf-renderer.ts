@@ -147,10 +147,10 @@ export class ShelfRenderer {
     this.renderShelfStructure(state.context.shelfConfig);
     this.renderDividers(state.context);
     this.renderGhostDivider(state.context.ghostDivider, state.context.shelfConfig);
-    this.renderSelectionHighlight(state.context.selectedDivider);
+    this.renderSelectionHighlight(state.context.selectedDivider, state.value);
     this.renderHoverHighlight(state.context.hoveredDivider);
     this.renderDistanceLabels(state.context);
-    this.renderDeleteButton(state.context.selectedDivider, state.context.shelfConfig);
+    this.renderDeleteButton(state.context.selectedDivider, state.context.shelfConfig, state.value);
     this.updateCameraControls(state.context.isDragging);
   }
 
@@ -306,8 +306,14 @@ export class ShelfRenderer {
     return mesh;
   }
 
-  renderSelectionHighlight(selectedDivider: any) {
-    this.renderHighlight(selectedDivider, "selection-highlight", 0xff0000, 0.3, 1.02, 998);
+  renderSelectionHighlight(selectedDivider: any, currentState: string) {
+    // Only show red highlight when in 'selected' state, not during dragging
+    if (currentState === 'selected') {
+      this.renderHighlight(selectedDivider, "selection-highlight", 0xff0000, 0.3, 1.02, 998);
+    } else {
+      // Clear selection highlight when not in selected state
+      this.renderHighlight(null, "selection-highlight", 0xff0000, 0.3, 1.02, 998);
+    }
   }
 
   renderHoverHighlight(hoveredDivider: any) {
@@ -332,10 +338,10 @@ export class ShelfRenderer {
     }
   }
 
-  renderDeleteButton(selectedDivider: any, shelfConfig: any) {
+  renderDeleteButton(selectedDivider: any, shelfConfig: any, currentState: string) {
     const deleteButton = document.getElementById('delete-button') as HTMLElement;
     
-    if (!selectedDivider || !shelfConfig) {
+    if (!selectedDivider || !shelfConfig || currentState !== 'selected') {
       deleteButton.style.display = 'none';
       return;
     }
