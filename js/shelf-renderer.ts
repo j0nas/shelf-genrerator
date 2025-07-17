@@ -540,8 +540,8 @@ export class ShelfRenderer {
     let distance: number;
     let position: [number, number, number];
     
-    // Calculate shelf center for proper framing
-    const shelfCenterY = config ? config.height / 2 : 0;
+    // Calculate visual center for proper framing (slightly above geometric center)
+    const shelfCenterY = config ? config.height * 0.6 : 0;
     
     switch (viewType) {
       case "front":
