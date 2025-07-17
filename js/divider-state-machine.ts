@@ -458,11 +458,11 @@ export const dividerStateMachine = createMachine<DividerContext>({
         }),
         
         updateDragPosition: assign((context, event) => {
-            if (!context.selectedDivider || !context.mousePosition) return context;
+            if (!context.selectedDivider || event.positionY === undefined || event.positionX === undefined) return context;
             
             const newPosition = context.selectedDivider.type === 'horizontal' 
-                ? context.mousePosition.positionY 
-                : context.mousePosition.positionX;
+                ? event.positionY 
+                : event.positionX;
             
             const allDividers = context.selectedDivider.type === 'horizontal' 
                 ? context.horizontalDividers 
