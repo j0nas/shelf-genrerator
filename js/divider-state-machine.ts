@@ -529,6 +529,8 @@ export const dividerStateMachine = createMachine<DividerContext>({
             // Will be implemented by the view layer
         },
         
+        
+        
         addExistingDivider: assign((context, event) => {
             const divider = event.divider;
             
