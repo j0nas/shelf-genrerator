@@ -325,7 +325,7 @@ export const dividerStateMachine = createMachine<DividerContext>({
                     {
                         cond: 'dragThresholdExceeded',
                         target: 'dragging',
-                        actions: 'startDrag'
+                        actions: ['updateMousePosition', 'startDrag']
                     },
                     {
                         actions: 'updateMousePosition'
@@ -344,9 +344,11 @@ export const dividerStateMachine = createMachine<DividerContext>({
             entry: 'disableCameraControls',
             exit: 'enableCameraControls',
             on: {
-                MOUSE_MOVE: {
-                    actions: ['updateMousePosition', 'updateDragPosition']
-                },
+                MOUSE_MOVE: [
+                    {
+                        actions: ['updateMousePosition', 'updateDragPosition']
+                    }
+                ],
                 MOUSE_UP: {
                     target: 'selected',
                     actions: 'commitDrag'
