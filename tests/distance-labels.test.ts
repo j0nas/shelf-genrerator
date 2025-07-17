@@ -60,7 +60,7 @@ describe('DistanceLabelManager', () => {
                 hoveredDivider,
                 allHorizontalDividers,
                 config
-            );
+            ) as any[];
 
             expect(distances).toHaveLength(2);
             
@@ -252,6 +252,66 @@ describe('DistanceLabelManager', () => {
             const interiorHeight = config.height - (2 * config.materialThickness);
             const distanceToTop = (interiorHeight - config.materialThickness/2) - 45.7;
             expect(labelTexts).toContain(`${distanceToTop.toFixed(1)}cm to Top`);
+        });
+    });
+
+    describe('Distance Calculation Logic', () => {
+        it('should calculate correct distances when dividers are far apart', () => {
+            const hoveredDivider = { id: 'vdiv1', position: 0, type: 'vertical' as const };
+            const allVerticalDividers = [
+                { id: 'vdiv1', position: 0, type: 'vertical' as const },
+                { id: 'vdiv2', position: 30, type: 'vertical' as const } // Far apart
+            ];
+            const config = {
+                width: 91,
+                height: 183,
+                depth: 30,
+                materialThickness: 1.8,
+                units: 'metric' as const
+            };
+
+            const distances = manager.calculateVerticalDividerDistances(
+                hoveredDivider,
+                allVerticalDividers,
+                config
+            );
+
+            // Should return separate distance calculations
+            expect(distances.length).toBeGreaterThanOrEqual(1);
+            
+            // Check that distances are calculated correctly
+            const rightDistance = distances.find(d => d.toName.includes('Divider'));
+            expect(rightDistance).toBeDefined();
+            expect(rightDistance?.distance).toBeCloseTo(28.2, 1); // 30 - 1.8 material thickness
+        });
+
+        it('should handle edge cases with dividers at boundaries', () => {
+            const hoveredDivider = { id: 'div1', position: 5, type: 'horizontal' as const }; // Near bottom
+            const allHorizontalDividers = [
+                { id: 'div1', position: 5, type: 'horizontal' as const }
+            ];
+            const config = {
+                width: 91,
+                height: 183,
+                depth: 30,
+                materialThickness: 1.8,
+                units: 'metric' as const
+            };
+
+            const distances = manager.calculateHorizontalDividerDistances(
+                hoveredDivider,
+                allHorizontalDividers,
+                config
+            );
+
+            expect(distances).toHaveLength(2); // One to bottom carcass, one to top carcass
+            
+            const bottomDistance = distances.find(d => d.toName === 'Bottom');
+            const topDistance = distances.find(d => d.toName === 'Top');
+            
+            expect(bottomDistance).toBeDefined();
+            expect(topDistance).toBeDefined();
+            expect(bottomDistance?.distance).toBeCloseTo(4.1, 1); // 5 - 0.9 (thickness/2)
         });
     });
 });

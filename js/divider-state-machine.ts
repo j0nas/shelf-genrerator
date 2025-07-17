@@ -371,8 +371,8 @@ export const dividerStateMachine = createMachine({
                     actions: ['updateMousePosition', 'updateDragPosition']
                 },
                 MOUSE_UP: {
-                    target: 'selected',
-                    actions: 'commitDrag'
+                    target: 'normal',
+                    actions: ['commitDrag', 'clearSelection']
                 },
                 RESET: {
                     target: 'normal',
