@@ -114,17 +114,17 @@ describe('Live Drag Position Updates', () => {
     });
 
     it('should update selectedDivider position for vertical dividers during drag', () => {
-        // Add a vertical divider
+        // Add a vertical divider (use position closer to center for reliable creation)
         service.send({
             type: 'MOUSE_MOVE',
             x: 100, y: 100,
-            positionY: 50, positionX: 10,
+            positionY: 50, positionX: 20,  // Further from edge
             isOverPanel: false
         });
         
         service.send({
             type: 'CLICK_EMPTY_SPACE',
-            positionY: 50, positionX: 10
+            positionY: 50, positionX: 20
         });
         
         let state = service.getSnapshot();
@@ -137,7 +137,7 @@ describe('Live Drag Position Updates', () => {
             divider: {
                 id: dividerId,
                 type: 'vertical',
-                position: 10
+                position: 20
             }
         });
         

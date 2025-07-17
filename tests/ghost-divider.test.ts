@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { createDividerSystemService } from '../dist/js/divider-state-machine.js';
+import { createDividerSystemService } from '../js/divider-state-machine.js';
 
 // Test configuration
 const testShelfConfig = {

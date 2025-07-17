@@ -4,7 +4,7 @@ import { DividerSystem } from '../js/divider-system.js';
 // Mock the dependencies
 vitest.mock('../js/divider-state-machine.js', () => ({
     createDividerSystemService: vitest.fn(() => ({
-        onTransition: vitest.fn(),
+        subscribe: vitest.fn(),  // XState v5 API
         start: vitest.fn(),
         send: vitest.fn(),
         getSnapshot: vitest.fn(() => ({
@@ -77,12 +77,12 @@ describe('DividerSystem', () => {
     describe('initialization', () => {
         it('should create state machine, renderer, and input controller', () => {
             expect(mockService.start).toHaveBeenCalled();
-            expect(mockService.onTransition).toHaveBeenCalled();
+            expect(mockService.subscribe).toHaveBeenCalled();
             expect(mockInputController.setupKeyboardShortcuts).toHaveBeenCalled();
         });
 
         it('should set up state machine transition handler', () => {
-            expect(mockService.onTransition).toHaveBeenCalledWith(expect.any(Function));
+            expect(mockService.subscribe).toHaveBeenCalledWith(expect.any(Function));
         });
     });
 
@@ -164,7 +164,7 @@ describe('DividerSystem', () => {
 
     describe('state synchronization', () => {
         it('should sync state to external app when dividers change', () => {
-            const transitionCallback = mockService.onTransition.mock.calls[0][0];
+            const transitionCallback = mockService.subscribe.mock.calls[0][0];
             
             const mockState = {
                 value: 'normal',
