@@ -539,32 +539,33 @@ export class ShelfRenderer {
     const config = this.getCurrentShelfConfig();
     let distance: number;
     let position: [number, number, number];
-    
-    // Calculate visual center for proper framing (slightly above geometric center)
-    const shelfCenterY = config ? config.height * 0.6 : 0;
-    
+
+    // Camera should be positioned at shelf center height for proper front view
+    const cameraHeight = config ? config.height / 2 : 0;
+    // Look at a point slightly higher than center for better visual framing  
+    const lookAtHeight = config ? config.height * 0.6 : 0;
     switch (viewType) {
       case "front":
         distance = config ? Math.max(config.width, config.height) * 2.5 : 150;
-        position = [0, shelfCenterY, distance];
+        position = [0, cameraHeight, distance];
         break;
       case "side":
         distance = config ? Math.max(config.depth, config.height) * 2.5 : 150;
-        position = [distance, shelfCenterY, 0];
+        position = [distance, cameraHeight, 0];
         break;
       case "top":
         distance = config ? Math.max(config.width, config.depth) * 2.5 : 150;
-        position = [0, shelfCenterY + distance, 0];
+        position = [0, cameraHeight + distance, 0];
         break;
       case "isometric":
         distance = config ? Math.max(config.width, config.height, config.depth) * 2.0 : 150;
-        position = [distance * 0.7, shelfCenterY + distance * 0.7, distance * 0.7];
+        position = [distance * 0.7, cameraHeight + distance * 0.7, distance * 0.7];
         break;
     }
 
     this.camera.position.set(...position);
-    this.camera.lookAt(0, shelfCenterY, 0);
-    this.controls.target.set(0, shelfCenterY, 0);
+    this.camera.lookAt(0, lookAtHeight, 0);
+    this.controls.target.set(0, lookAtHeight, 0);
     this.controls.update();
   }
 

@@ -54,6 +54,9 @@ export class DividerSystem {
       type: "UPDATE_SHELF_CONFIG",
       config: config,
     });
+    
+    // Set front view after config is updated to ensure proper camera positioning
+    this.renderer.setFrontView();
   }
 
   // Get current state (for debugging)
