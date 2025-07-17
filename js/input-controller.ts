@@ -76,10 +76,8 @@ export class InputController {
         const mousePos = this.renderer.getMousePosition(event);
         const intersection = this.renderer.getShelfIntersection(mousePos.x, mousePos.y);
         
-        if (!intersection) return;
-        
-        // Check if clicking on divider
-        const dividerAtMouse = this.renderer.getDividerAtPosition(mousePos.x, mousePos.y);
+        // Check if clicking on divider (only if we have shelf intersection)
+        const dividerAtMouse = intersection ? this.renderer.getDividerAtPosition(mousePos.x, mousePos.y) : null;
         
         if (dividerAtMouse) {
             // Clicking on a divider - always select it (even if another is selected)
@@ -99,6 +97,15 @@ export class InputController {
                 return;
             }
             
+            // Handle clicks outside shelf area
+            if (!intersection) {
+                // Clicking outside shelf - deselect any selected divider
+                if (currentState.value === 'selected') {
+                    this.stateMachine.send({ type: 'CLICK_ELSEWHERE' });
+                }
+                return;
+            }
+            
             // Check if mouse is over a shelf panel
             const mousePos = this.renderer.getMousePosition(event);
             const isOverPanel = this.renderer.isMouseOverPanel(mousePos.x, mousePos.y);
@@ -111,7 +118,7 @@ export class InputController {
                 return;
             }
             
-            // Clicking on empty space
+            // Clicking on empty space within shelf
             if (currentState.value === 'selected') {
                 this.stateMachine.send({ type: 'CLICK_ELSEWHERE' });
             } else {

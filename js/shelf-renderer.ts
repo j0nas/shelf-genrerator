@@ -78,7 +78,7 @@ export class ShelfRenderer {
         this.controls.panSpeed = 1.0;
         this.controls.minDistance = 10;
         this.controls.maxDistance = 200;
-        this.controls.zoomSpeed = 0.3;
+        this.controls.zoomSpeed = 1.0;
         this.controls.rotateSpeed = 0.8;
         this.controls.maxPolarAngle = Math.PI / 2;
         
