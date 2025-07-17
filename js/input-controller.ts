@@ -22,6 +22,16 @@ export class InputController {
         canvas.addEventListener('click', (event) => this.onClick(event));
         canvas.addEventListener('mousedown', (event) => this.onMouseDown(event));
         canvas.addEventListener('mouseup', (event) => this.onMouseUp(event));
+        
+        // Delete button click handler
+        const deleteButton = document.getElementById('delete-divider-btn');
+        if (deleteButton) {
+            deleteButton.addEventListener('click', (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                this.stateMachine.send({ type: 'CLICK_DELETE' });
+            });
+        }
     }
     
     onMouseMove(event: MouseEvent) {

@@ -150,6 +150,7 @@ export class ShelfRenderer {
     this.renderSelectionHighlight(state.context.selectedDivider);
     this.renderHoverHighlight(state.context.hoveredDivider);
     this.renderDistanceLabels(state.context);
+    this.renderDeleteButton(state.context.selectedDivider, state.context.shelfConfig);
     this.updateCameraControls(state.context.isDragging);
   }
 
@@ -329,6 +330,51 @@ export class ShelfRenderer {
     } else {
       this.distanceLabelManager.clearLabels();
     }
+  }
+
+  renderDeleteButton(selectedDivider: any, shelfConfig: any) {
+    const deleteButton = document.getElementById('delete-button') as HTMLElement;
+    
+    if (!selectedDivider || !shelfConfig) {
+      deleteButton.style.display = 'none';
+      return;
+    }
+
+    // Show the delete button
+    deleteButton.style.display = 'block';
+
+    // Calculate 3D position of the selected divider
+    const thickness = shelfConfig.materialThickness;
+    let worldPosition: THREE.Vector3;
+
+    if (selectedDivider.type === 'horizontal') {
+      // Position delete button to the right of horizontal dividers
+      worldPosition = new THREE.Vector3(
+        shelfConfig.width / 2 + 15, // Right of shelf + offset
+        thickness + selectedDivider.position,
+        shelfConfig.depth / 2
+      );
+    } else {
+      // Position delete button above vertical dividers
+      worldPosition = new THREE.Vector3(
+        selectedDivider.position,
+        thickness + shelfConfig.height - (2 * thickness) + 15, // Above shelf + offset
+        shelfConfig.depth / 2
+      );
+    }
+
+    // Project 3D position to screen coordinates
+    const screenPosition = worldPosition.clone().project(this.camera);
+    
+    // Convert to pixel coordinates
+    const canvas = this.renderer.domElement;
+    const x = (screenPosition.x * 0.5 + 0.5) * canvas.clientWidth;
+    const y = (screenPosition.y * -0.5 + 0.5) * canvas.clientHeight;
+
+    // Position the delete button
+    deleteButton.style.left = `${x}px`;
+    deleteButton.style.top = `${y}px`;
+    deleteButton.style.transform = 'translate(-50%, -50%)';
   }
 
   private renderHighlight(
