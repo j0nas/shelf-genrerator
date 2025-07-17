@@ -323,13 +323,6 @@ export class ShelfRenderer {
         const targetDivider = (context.isDragging && context.selectedDivider ? context.selectedDivider : null) ||
             context.hoveredDivider;
             
-        console.log('🔥 renderDistanceLabels called:', {
-            isDragging: context.isDragging,
-            hasSelectedDivider: !!context.selectedDivider,
-            selectedDividerPosition: context.selectedDivider?.position,
-            hasTargetDivider: !!targetDivider,
-            targetDividerPosition: targetDivider?.position
-        });
             
         if (targetDivider && context.shelfConfig) {
             this.distanceLabelManager.showDistanceLabels(

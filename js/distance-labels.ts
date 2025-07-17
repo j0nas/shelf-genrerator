@@ -210,13 +210,6 @@ export class DistanceLabelManager {
         config: ShelfConfig,
         isDragging: boolean = false
     ) {
-        console.log('🔥 showDistanceLabels called:', {
-            hoveredDividerPosition: hoveredDivider.position,
-            hoveredDividerType: hoveredDivider.type,
-            isDragging,
-            horizontalDividersCount: horizontalDividers.length,
-            verticalDividersCount: verticalDividers.length
-        });
         
         this.clearLabels();
         

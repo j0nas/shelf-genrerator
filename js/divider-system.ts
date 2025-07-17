@@ -22,10 +22,6 @@ export class DividerSystem {
   setupStateMachine() {
     // Subscribe to state changes and re-render
     this.stateMachine.subscribe((state: any) => {
-      console.log(`🎯 State: ${state.value}`, {
-        isDragging: state.context.isDragging,
-        selectedDividerPosition: state.context.selectedDivider?.position
-      });
 
       // Pure view update - renderer is a function of state
       this.renderer.render(state);

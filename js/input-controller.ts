@@ -62,7 +62,6 @@ export class InputController {
         // Trigger render during dragging for live updates
         const currentState = this.stateMachine.getSnapshot();
         if (currentState.value === 'dragging' && this.renderCallback) {
-            console.log('🔥 Triggering render callback during drag, selectedDivider position:', currentState.context.selectedDivider?.position);
             this.renderCallback();
         }
     }
