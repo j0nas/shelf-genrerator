@@ -285,6 +285,10 @@ export const dividerStateMachine = createMachine({
                 MOUSE_MOVE: {
                     actions: ['updateMousePosition']
                 },
+                MOUSE_DOWN: {
+                    target: 'preparingDrag',
+                    actions: ['selectHoveredDivider', 'prepareDrag']
+                },
                 CLICK_DIVIDER: {
                     target: 'selected',
                     actions: 'selectDivider'
@@ -434,6 +438,11 @@ export const dividerStateMachine = createMachine({
         
         selectDivider: assign({
             selectedDivider: ({ event }) => event.type === 'CLICK_DIVIDER' ? event.divider : null,
+            hoveredDivider: null
+        }),
+        
+        selectHoveredDivider: assign({
+            selectedDivider: ({ context }) => context.hoveredDivider,
             hoveredDivider: null
         }),
         

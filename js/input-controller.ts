@@ -134,7 +134,7 @@ export class InputController {
     onMouseDown(event: MouseEvent) {
         const currentState = this.stateMachine.getSnapshot();
         
-        if (currentState.value === 'selected') {
+        if (currentState.value === 'selected' || currentState.value === 'hovering') {
             this.stateMachine.send({
                 type: 'MOUSE_DOWN',
                 x: event.clientX,
