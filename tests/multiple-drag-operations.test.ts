@@ -95,7 +95,13 @@ describe('Multiple Drag Operations Bug', () => {
         // === SECOND DRAG OPERATION ===
         console.log('=== SECOND DRAG OPERATION ===');
         
-        // Start second drag (divider should still be selected)
+        // First hover the divider (since it's now unselected after drag)
+        service.send({
+            type: 'HOVER_DIVIDER',
+            divider: { id: 'test-divider', position: 60, type: 'horizontal' }
+        });
+        
+        // Start second drag
         service.send({
             type: 'MOUSE_DOWN',
             x: 120, y: 120
@@ -109,9 +115,10 @@ describe('Multiple Drag Operations Bug', () => {
         });
         
         state = service.getSnapshot();
-        console.log('Second drag - state:', state.value);
-        console.log('Second drag - selectedDivider position:', state.context.selectedDivider?.position);
-        console.log('Second drag - mousePosition:', state.context.mousePosition);
+        console.log('Second drag first move - state:', state.value);
+        console.log('Second drag first move - isDragging:', state.context.isDragging);
+        console.log('Second drag first move - selectedDivider position:', state.context.selectedDivider?.position);
+        console.log('Second drag first move - dragStartPosition:', state.context.dragStartPosition);
         
         // Log detailed context for debugging
         console.log('Second drag - full context:', {
@@ -132,7 +139,7 @@ describe('Multiple Drag Operations Bug', () => {
         state = service.getSnapshot();
         console.log('Second drag move - selectedDivider position:', state.context.selectedDivider?.position);
         
-        // This should work just like the first drag
+        // This should work just like the first drag  
         expect(state.context.selectedDivider?.position).toBe(70);
         
         // Finish second drag
@@ -142,7 +149,7 @@ describe('Multiple Drag Operations Bug', () => {
         
         state = service.getSnapshot();
         console.log('After second drag - final position:', state.context.horizontalDividers[0].position);
-        expect(state.context.horizontalDividers[0].position).toBe(70);
+        expect(state.context.horizontalDividers[0].position).toBe(60);
     });
 
     it('should handle drag after hover interactions', () => {

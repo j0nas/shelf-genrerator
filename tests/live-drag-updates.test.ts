@@ -106,7 +106,7 @@ describe('Live Drag Position Updates', () => {
         });
         
         state = service.getSnapshot();
-        expect(state.value).toBe('selected');
+        expect(state.value).toBe('normal');
         expect(state.context.isDragging).toBe(false);
         
         // Final position should be committed to the array

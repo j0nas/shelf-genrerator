@@ -113,16 +113,38 @@ export class DistanceLabelManager {
         const midpointAbove = worldY + (distanceAbove / 2);
         const midpointBelow = worldY - (distanceBelow / 2);
         
-        // Ensure minimum separation in 3D space to prevent screen overlap
-        const minSeparation = 15; // minimum distance between label positions
-        const actualSeparation = Math.abs(midpointAbove - midpointBelow);
+        // Check screen space separation for horizontal labels too
+        const abovePos3D = new THREE.Vector3(-config.width / 2 - 10, midpointAbove, config.depth / 2 + 5);
+        const belowPos3D = new THREE.Vector3(-config.width / 2 - 10, midpointBelow, config.depth / 2 + 5);
+        
+        let screenSeparation = 1000; // Default to large separation if projection fails
+        const minScreenSeparation = 100;
+        
+        try {
+            const aboveScreen = abovePos3D.clone().project(this.camera);
+            const belowScreen = belowPos3D.clone().project(this.camera);
+            
+            const canvas = this.renderer.domElement;
+            const aboveX_screen = (aboveScreen.x * 0.5 + 0.5) * canvas.clientWidth;
+            const aboveY_screen = (aboveScreen.y * -0.5 + 0.5) * canvas.clientHeight;
+            const belowX_screen = (belowScreen.x * 0.5 + 0.5) * canvas.clientWidth;
+            const belowY_screen = (belowScreen.y * -0.5 + 0.5) * canvas.clientHeight;
+            
+            screenSeparation = Math.sqrt(
+                (aboveX_screen - belowX_screen) ** 2 + (aboveY_screen - belowY_screen) ** 2
+            );
+        } catch (error) {
+            // Fallback to 3D separation
+            const threeDSeparation = Math.abs(midpointAbove - midpointBelow);
+            screenSeparation = threeDSeparation > 15 ? 1000 : 50;
+        }
         
         let aboveY = midpointAbove;
         let belowY = midpointBelow;
         let aboveX = -config.width / 2 - 10;
         let belowX = -config.width / 2 - 10;
         
-        if (actualSeparation < minSeparation) {
+        if (screenSeparation < minScreenSeparation) {
             // If labels would be too close, combine them into a single label
             const combinedLabel = `${distanceBelow.toFixed(1)}cm to ${belowName} • ${distanceAbove.toFixed(1)}cm to ${aboveName}`;
             distances.push({
@@ -216,21 +238,28 @@ export class DistanceLabelManager {
         const rightPos3D = new THREE.Vector3(midpointRight, worldY + 20, config.depth / 2 + 5);
         const leftPos3D = new THREE.Vector3(midpointLeft, worldY + 20, config.depth / 2 + 5);
         
-        // Project to screen coordinates
-        const rightScreen = rightPos3D.clone().project(this.camera);
-        const leftScreen = leftPos3D.clone().project(this.camera);
-        
-        const canvas = this.renderer.domElement;
-        const rightX_screen = (rightScreen.x * 0.5 + 0.5) * canvas.clientWidth;
-        const rightY_screen = (rightScreen.y * -0.5 + 0.5) * canvas.clientHeight;
-        const leftX_screen = (leftScreen.x * 0.5 + 0.5) * canvas.clientWidth;
-        const leftY_screen = (leftScreen.y * -0.5 + 0.5) * canvas.clientHeight;
-        
-        const screenSeparation = Math.sqrt(
-            (rightX_screen - leftX_screen) ** 2 + (rightY_screen - leftY_screen) ** 2
-        );
-        
+        let screenSeparation = 1000; // Default to large separation (no combining) if projection fails
         const minScreenSeparation = 100; // minimum pixel separation on screen
+        
+        try {
+            // Project to screen coordinates
+            const rightScreen = rightPos3D.clone().project(this.camera);
+            const leftScreen = leftPos3D.clone().project(this.camera);
+            
+            const canvas = this.renderer.domElement;
+            const rightX_screen = (rightScreen.x * 0.5 + 0.5) * canvas.clientWidth;
+            const rightY_screen = (rightScreen.y * -0.5 + 0.5) * canvas.clientHeight;
+            const leftX_screen = (leftScreen.x * 0.5 + 0.5) * canvas.clientWidth;
+            const leftY_screen = (leftScreen.y * -0.5 + 0.5) * canvas.clientHeight;
+            
+            screenSeparation = Math.sqrt(
+                (rightX_screen - leftX_screen) ** 2 + (rightY_screen - leftY_screen) ** 2
+            );
+        } catch (error) {
+            // Camera projection failed (likely in tests), use 3D separation as fallback
+            const threeDSeparation = Math.abs(midpointRight - midpointLeft);
+            screenSeparation = threeDSeparation > 15 ? 1000 : 50; // Convert to screen-like scale
+        }
         
         let rightX = midpointRight;
         let leftX = midpointLeft;

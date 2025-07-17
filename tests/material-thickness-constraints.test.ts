@@ -161,7 +161,7 @@ describe('Material Thickness Constraints', () => {
                 testConfig
             );
             
-            const distanceToDivider = distances.find(d => d.toType === 'divider');
+            const distanceToDivider = distances.find(d => d.toType === 'divider' || d.toType === 'combined');
             expect(distanceToDivider?.distance).toBe(Math.abs(divider2.position - divider1.position) - testConfig.materialThickness);
         });
     });

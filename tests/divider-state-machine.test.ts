@@ -441,7 +441,7 @@ describe('Divider State Machine', () => {
             type: 'MOUSE_UP'
         });
         
-        expect(getState(service).value).toBe('selected');
+        expect(getState(service).value).toBe('normal');
         expect(getContext(service).isDragging).toBe(false);
     });
 
