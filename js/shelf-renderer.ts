@@ -545,19 +545,19 @@ export class ShelfRenderer {
     
     switch (viewType) {
       case "front":
-        distance = config ? Math.max(config.width, config.height) * 1.5 : 100;
+        distance = config ? Math.max(config.width, config.height) * 2.5 : 150;
         position = [0, shelfCenterY, distance];
         break;
       case "side":
-        distance = config ? Math.max(config.depth, config.height) * 1.5 : 100;
+        distance = config ? Math.max(config.depth, config.height) * 2.5 : 150;
         position = [distance, shelfCenterY, 0];
         break;
       case "top":
-        distance = config ? Math.max(config.width, config.depth) * 1.5 : 100;
+        distance = config ? Math.max(config.width, config.depth) * 2.5 : 150;
         position = [0, shelfCenterY + distance, 0];
         break;
       case "isometric":
-        distance = config ? Math.max(config.width, config.height, config.depth) * 1.2 : 100;
+        distance = config ? Math.max(config.width, config.height, config.depth) * 2.0 : 150;
         position = [distance * 0.7, shelfCenterY + distance * 0.7, distance * 0.7];
         break;
     }
