@@ -8,9 +8,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "serve": "serve -l 8765",
     "test": "vitest",
-    "test:ui": "vitest --ui",
     "test:run": "vitest run",
     "test:ghost": "vitest run tests/ghost-divider.test.js",
     "test:regression": "vitest run tests/subdivision-bug-regression.test.js",
@@ -32,10 +30,8 @@
   },
   "devDependencies": {
     "@types/three": "^0.178.1",
-    "@vitest/ui": "^3.2.4",
     "concurrently": "^9.2.0",
     "jsdom": "^26.1.0",
-    "serve": "^14.2.1",
     "typescript": "^5.8.3",
     "vite": "^7.0.5",
     "vitest": "^3.2.4"
