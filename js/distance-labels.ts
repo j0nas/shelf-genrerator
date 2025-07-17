@@ -19,6 +19,7 @@ interface ShelfConfig {
     height: number;
     depth: number;
     materialThickness: number;
+    units?: 'metric' | 'imperial';
 }
 
 export class DistanceLabelManager {
@@ -78,11 +79,12 @@ export class DistanceLabelManager {
         
         if (dividersAbove.length > 0) {
             const nextDivider = dividersAbove[0];
-            distanceAbove = nextDivider.position - hoveredPosition;
+            distanceAbove = nextDivider.position - hoveredPosition - thickness;
             aboveName = `Divider ${sortedDividers.indexOf(nextDivider) + 1}`;
             aboveType = 'divider';
         } else {
-            distanceAbove = interiorHeight - hoveredPosition;
+            // Account for divider thickness when measuring to carcass
+            distanceAbove = (interiorHeight - thickness/2) - hoveredPosition;
             aboveName = 'Top';
             aboveType = 'carcass';
         }
@@ -95,11 +97,12 @@ export class DistanceLabelManager {
         
         if (dividersBelow.length > 0) {
             const prevDivider = dividersBelow[dividersBelow.length - 1];
-            distanceBelow = hoveredPosition - prevDivider.position;
+            distanceBelow = hoveredPosition - prevDivider.position - thickness;
             belowName = `Divider ${sortedDividers.indexOf(prevDivider) + 1}`;
             belowType = 'divider';
         } else {
-            distanceBelow = hoveredPosition;
+            // Account for divider thickness when measuring to carcass
+            distanceBelow = hoveredPosition - thickness/2;
             belowName = 'Bottom';
             belowType = 'carcass';
         }
@@ -152,11 +155,12 @@ export class DistanceLabelManager {
         
         if (dividersRight.length > 0) {
             const nextDivider = dividersRight[0];
-            distanceRight = nextDivider.position - hoveredPosition;
+            distanceRight = nextDivider.position - hoveredPosition - thickness;
             rightName = `Divider ${sortedDividers.indexOf(nextDivider) + 1}`;
             rightType = 'divider';
         } else {
-            distanceRight = (interiorWidth / 2) - hoveredPosition;
+            // Account for divider thickness when measuring to carcass
+            distanceRight = (interiorWidth / 2 - thickness/2) - hoveredPosition;
             rightName = 'Right';
             rightType = 'carcass';
         }
@@ -169,11 +173,12 @@ export class DistanceLabelManager {
         
         if (dividersLeft.length > 0) {
             const prevDivider = dividersLeft[dividersLeft.length - 1];
-            distanceLeft = hoveredPosition - prevDivider.position;
+            distanceLeft = hoveredPosition - prevDivider.position - thickness;
             leftName = `Divider ${sortedDividers.indexOf(prevDivider) + 1}`;
             leftType = 'divider';
         } else {
-            distanceLeft = hoveredPosition - (-interiorWidth / 2);
+            // Account for divider thickness when measuring to carcass
+            distanceLeft = hoveredPosition - (-interiorWidth / 2 + thickness/2);
             leftName = 'Left';
             leftType = 'carcass';
         }

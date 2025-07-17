@@ -15,6 +15,7 @@ export interface ShelfConfig {
     backPanel: boolean;
     edgeTreatment: string;
     woodGrain: boolean;
+    units?: 'metric' | 'imperial'; // Add units field
 }
 
 export interface HorizontalDividerInfo {

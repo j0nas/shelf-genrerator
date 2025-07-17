@@ -52,7 +52,8 @@ describe('DistanceLabelManager', () => {
                 width: 91,
                 height: 183,
                 depth: 30,
-                materialThickness: 1.8
+                materialThickness: 1.8,
+                units: 'metric' as const
             };
 
             const distances = manager.calculateHorizontalDividerDistances(
@@ -63,14 +64,14 @@ describe('DistanceLabelManager', () => {
 
             expect(distances).toHaveLength(2);
             
-            // Distance above (to div3)
-            const distanceAbove = distances.find(d => d.distance === 30);
+            // Distance above (to div3) - should be 30 - 1.8 = 28.2
+            const distanceAbove = distances.find(d => d.distance === 28.2);
             expect(distanceAbove).toBeDefined();
             expect(distanceAbove?.toName).toBe('Divider 2'); // div3 is index 2 in sorted array
             expect(distanceAbove?.toType).toBe('divider');
             
-            // Distance below (to div1)
-            const distanceBelow = distances.find(d => d.distance === 30);
+            // Distance below (to div1) - should be 30 - 1.8 = 28.2
+            const distanceBelow = distances.find(d => d.distance === 28.2);
             expect(distanceBelow).toBeDefined();
         });
 
@@ -83,7 +84,8 @@ describe('DistanceLabelManager', () => {
                 width: 91,
                 height: 183,
                 depth: 30,
-                materialThickness: 1.8
+                materialThickness: 1.8,
+                units: 'metric' as const
             };
             const interiorHeight = config.height - (2 * config.materialThickness); // 179.4
 
@@ -95,15 +97,15 @@ describe('DistanceLabelManager', () => {
 
             expect(distances).toHaveLength(2);
             
-            // Distance above (to top carcass)
+            // Distance above (to top carcass) - accounts for material thickness
             const distanceAbove = distances.find(d => d.toType === 'carcass' && d.toName === 'Top');
             expect(distanceAbove).toBeDefined();
-            expect(distanceAbove?.distance).toBe(interiorHeight - 30); // 149.4
+            expect(distanceAbove?.distance).toBe((interiorHeight - config.materialThickness/2) - 30); // 148.5
             
-            // Distance below (to bottom carcass)
+            // Distance below (to bottom carcass) - accounts for material thickness
             const distanceBelow = distances.find(d => d.toType === 'carcass' && d.toName === 'Bottom');
             expect(distanceBelow).toBeDefined();
-            expect(distanceBelow?.distance).toBe(30);
+            expect(distanceBelow?.distance).toBe(30 - config.materialThickness/2); // 29.1
         });
     });
 
@@ -119,7 +121,8 @@ describe('DistanceLabelManager', () => {
                 width: 91,
                 height: 183,
                 depth: 30,
-                materialThickness: 1.8
+                materialThickness: 1.8,
+                units: 'metric' as const
             };
 
             const distances = manager.calculateVerticalDividerDistances(
@@ -130,13 +133,13 @@ describe('DistanceLabelManager', () => {
 
             expect(distances).toHaveLength(2);
             
-            // Distance right (to vdiv3)
-            const distanceRight = distances.find(d => d.distance === 20);
+            // Distance right (to vdiv3) - should be 20 - 1.8 = 18.2
+            const distanceRight = distances.find(d => d.distance === 18.2);
             expect(distanceRight).toBeDefined();
             expect(distanceRight?.toType).toBe('divider');
             
-            // Distance left (to vdiv1)
-            const distanceLeft = distances.find(d => d.distance === 20);
+            // Distance left (to vdiv1) - should be 20 - 1.8 = 18.2
+            const distanceLeft = distances.find(d => d.distance === 18.2);
             expect(distanceLeft).toBeDefined();
             expect(distanceLeft?.toType).toBe('divider');
         });
@@ -146,7 +149,8 @@ describe('DistanceLabelManager', () => {
                 width: 91,
                 height: 183,
                 depth: 30,
-                materialThickness: 1.8
+                materialThickness: 1.8,
+                units: 'metric' as const
             };
             const interiorWidth = config.width - (2 * config.materialThickness); // 87.4
             
@@ -163,15 +167,15 @@ describe('DistanceLabelManager', () => {
 
             expect(distances).toHaveLength(2);
             
-            // Distance right (to right carcass)
+            // Distance right (to right carcass) - accounts for material thickness
             const distanceRight = distances.find(d => d.toType === 'carcass' && d.toName === 'Right');
             expect(distanceRight).toBeDefined();
-            expect(distanceRight?.distance).toBeCloseTo((interiorWidth / 2) - (-30)); // 73.7
+            expect(distanceRight?.distance).toBeCloseTo((interiorWidth / 2 - config.materialThickness/2) - (-30)); // 72.8
             
-            // Distance left (to left carcass)
+            // Distance left (to left carcass) - accounts for material thickness
             const distanceLeft = distances.find(d => d.toType === 'carcass' && d.toName === 'Left');
             expect(distanceLeft).toBeDefined();
-            expect(distanceLeft?.distance).toBeCloseTo(-30 - (-interiorWidth / 2)); // 13.7
+            expect(distanceLeft?.distance).toBeCloseTo(-30 - (-interiorWidth / 2 + config.materialThickness/2)); // 12.8
         });
     });
 
@@ -184,7 +188,8 @@ describe('DistanceLabelManager', () => {
                 width: 91,
                 height: 183,
                 depth: 30,
-                materialThickness: 1.8
+                materialThickness: 1.8,
+                units: 'metric' as const
             };
 
             manager.showDistanceLabels(hoveredDivider, horizontalDividers, verticalDividers, config);
@@ -204,7 +209,8 @@ describe('DistanceLabelManager', () => {
                 width: 91,
                 height: 183,
                 depth: 30,
-                materialThickness: 1.8
+                materialThickness: 1.8,
+                units: 'metric' as const
             };
 
             // First show labels
@@ -228,7 +234,8 @@ describe('DistanceLabelManager', () => {
                 width: 91,
                 height: 183,
                 depth: 30,
-                materialThickness: 1.8
+                materialThickness: 1.8,
+                units: 'metric' as const
             };
 
             manager.showDistanceLabels(hoveredDivider, horizontalDividers, verticalDividers, config);
@@ -240,10 +247,10 @@ describe('DistanceLabelManager', () => {
             
             // Check label content format
             const labelTexts = Array.from(labels || []).map(label => label.textContent);
-            expect(labelTexts).toContain('45.7cm to Bottom');
+            expect(labelTexts).toContain('44.8cm to Bottom'); // 45.7 - 0.9 (thickness/2)
             
             const interiorHeight = config.height - (2 * config.materialThickness);
-            const distanceToTop = interiorHeight - 45.7;
+            const distanceToTop = (interiorHeight - config.materialThickness/2) - 45.7;
             expect(labelTexts).toContain(`${distanceToTop.toFixed(1)}cm to Top`);
         });
     });

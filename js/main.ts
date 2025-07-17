@@ -19,7 +19,8 @@ export class App {
             verticalDividers: [], // Will be managed by DividerSystem
             backPanel: false,
             edgeTreatment: 'none',
-            woodGrain: true
+            woodGrain: true,
+            units: 'metric'
         };
         
         this.init();

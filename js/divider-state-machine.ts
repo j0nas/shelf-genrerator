@@ -130,8 +130,8 @@ const detectHorizontalGhost = (
             const minGap = config.units === 'metric' ? 2 : 0.75;
             
             // Check if mouse position would be too close to existing dividers
-            const tooCloseToBottom = (mousePos.positionY - bottomBound) < minGap;
-            const tooCloseToTop = (topBound - mousePos.positionY) < minGap;
+            const tooCloseToBottom = i === 0 ? false : (mousePos.positionY - bottomBound) < minGap;
+            const tooCloseToTop = i === sortedDividers.length ? false : (topBound - mousePos.positionY) < minGap;
             
             const canAdd = sectionSizeOk && !tooCloseToBottom && !tooCloseToTop;
             
@@ -172,8 +172,8 @@ const detectVerticalGhost = (
             const minGap = config.units === 'metric' ? 2 : 0.75;
             
             // Check if mouse position would be too close to existing dividers
-            const tooCloseToLeft = (mousePos.positionX - leftBound) < minGap;
-            const tooCloseToRight = (rightBound - mousePos.positionX) < minGap;
+            const tooCloseToLeft = i === 0 ? false : (mousePos.positionX - leftBound) < minGap;
+            const tooCloseToRight = i === sortedDividers.length ? false : (rightBound - mousePos.positionX) < minGap;
             
             const canAdd = sectionSizeOk && !tooCloseToLeft && !tooCloseToRight;
             
@@ -199,17 +199,18 @@ const constrainDividerPosition = (
 ): number => {
     if (!config) return position;
     
+    const thickness = config.materialThickness;
     const maxBound = dividerType === 'horizontal' 
-        ? calculateInteriorHeight(config)
-        : calculateInteriorWidth(config) / 2;
+        ? calculateInteriorHeight(config) - thickness / 2
+        : calculateInteriorWidth(config) / 2 - thickness / 2;
     const minBound = dividerType === 'horizontal' 
-        ? 0 
-        : -calculateInteriorWidth(config) / 2;
+        ? thickness / 2
+        : -calculateInteriorWidth(config) / 2 + thickness / 2;
     
     const otherDividers = dividers.filter(d => d.id !== dividerId && d.type === dividerType);
     const minGap = config.units === 'metric' ? 2 : 0.75;
     
-    let constrainedPosition = Math.max(minBound + minGap, Math.min(maxBound - minGap, position));
+    let constrainedPosition = Math.max(minBound, Math.min(maxBound, position));
     
     // Avoid collisions with other dividers
     for (const other of otherDividers) {
@@ -222,7 +223,7 @@ const constrainDividerPosition = (
         }
     }
     
-    return Math.max(minBound + minGap, Math.min(maxBound - minGap, constrainedPosition));
+    return Math.max(minBound, Math.min(maxBound, constrainedPosition));
 };
 
 // The comprehensive state machine
@@ -448,11 +449,23 @@ export const dividerStateMachine = createMachine({
         addDivider: assign(({ context }) => {
             if (!context.ghostDivider) return {};
             
+            const rawPosition = context.ghostDivider.type === 'vertical' 
+                ? context.ghostDivider.positionX! 
+                : context.ghostDivider.position;
+            
+            // Apply position constraints when creating the divider
+            const allDividers = [...context.horizontalDividers, ...context.verticalDividers];
+            const constrainedPosition = constrainDividerPosition(
+                rawPosition,
+                context.ghostDivider.type,
+                createDividerId(), // temporary ID for constraint check
+                allDividers,
+                context.shelfConfig
+            );
+            
             const newDivider: DividerData = {
                 id: createDividerId(),
-                position: context.ghostDivider.type === 'vertical' 
-                    ? context.ghostDivider.positionX! 
-                    : context.ghostDivider.position,
+                position: constrainedPosition,
                 type: context.ghostDivider.type
             };
             
