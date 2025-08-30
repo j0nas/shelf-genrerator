@@ -306,7 +306,7 @@ export class DistanceLabelManager {
         
         this.clearLabels();
         
-        let distances: Array<{distance: number, position: THREE.Vector3, toType: 'divider' | 'carcass', toName: string}>;
+        let distances: Array<{distance: number, position: THREE.Vector3, toType: 'divider' | 'carcass' | 'combined', toName: string, isCombined?: boolean}>;
         
         if (hoveredDivider.type === 'horizontal') {
             // During dragging, use the live position but filter out the dragged divider from calculations
